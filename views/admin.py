@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from auth.service import reset_user_password_as_admin
 from database.users import (
     get_all_users,
     set_user_active,
@@ -21,8 +22,8 @@ def render_admin_page(current_user_id: int) -> None:
             <div class="eyebrow">Family Administration</div>
             <h1>Manage Family</h1>
             <p>
-                Update display names and control which accounts participate
-                in the shared family tracker.
+                Update display names, reset passwords, and control which
+                accounts participate in the shared family tracker.
             </p>
         </section>
         """,
@@ -76,6 +77,43 @@ def render_admin_page(current_user_id: int) -> None:
                         st.session_state.user_name = new_name.strip()
                     st.success("Display name updated.")
                     st.rerun()
+                except (PermissionError, ValueError) as exc:
+                    st.error(str(exc))
+
+            st.markdown("**Password recovery**")
+            with st.form(f"admin_password_reset_{user_id}"):
+                new_password = st.text_input(
+                    "New password",
+                    type="password",
+                    autocomplete="new-password",
+                    key=f"admin_password_{user_id}",
+                )
+                confirm_password = st.text_input(
+                    "Confirm new password",
+                    type="password",
+                    autocomplete="new-password",
+                    key=f"admin_password_confirm_{user_id}",
+                )
+                reset_submitted = st.form_submit_button(
+                    "Reset Password",
+                )
+
+            if reset_submitted:
+                try:
+                    errors = reset_user_password_as_admin(
+                        current_user_id,
+                        user_id,
+                        new_password,
+                        confirm_password,
+                    )
+                    if errors:
+                        for error in errors:
+                            st.error(error)
+                    else:
+                        st.success(
+                            f"Password reset for {name}. They can sign in "
+                            "immediately with the new password."
+                        )
                 except (PermissionError, ValueError) as exc:
                     st.error(str(exc))
 
