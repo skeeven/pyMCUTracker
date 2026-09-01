@@ -98,6 +98,36 @@ def apply_theme() -> None:
             margin: 0.55rem 0;
         }
 
+        .library-card {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem 1.15rem;
+            margin: 0.55rem 0;
+            border: 1px solid rgba(199, 206, 216, 0.14);
+            border-radius: 14px;
+            background: rgba(17, 21, 29, 0.84);
+        }
+
+        .library-order {
+            min-width: 3.2rem;
+            color: var(--accent);
+            font-weight: 800;
+            letter-spacing: 0.05rem;
+        }
+
+        .library-title {
+            color: var(--text);
+            font-size: 1.02rem;
+            font-weight: 750;
+        }
+
+        .library-meta {
+            color: var(--muted);
+            font-size: 0.88rem;
+            margin-top: 0.2rem;
+        }
+
         .family-status {
             display: flex;
             align-items: center;
