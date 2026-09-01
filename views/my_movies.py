@@ -73,7 +73,7 @@ def render_my_movies(user_id: int) -> None:
             )
 
             if new_value != checked:
-                set_movie_watched(user_id, movie_id, new_value)
+                set_movie_watched(user_id, user_id, movie_id, new_value)
                 st.rerun()
 
         st.divider()
