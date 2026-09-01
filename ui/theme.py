@@ -17,6 +17,7 @@ def apply_theme() -> None:
             --accent: #d7263d;
             --accent-soft: #7f1424;
             --metal: #c7ced8;
+            --success: #4fd17b;
         }
 
         .stApp {
@@ -69,15 +70,22 @@ def apply_theme() -> None:
             margin-bottom: 0;
         }
 
-        .metric-card {
+        .metric-card,
+        .phase-progress-card,
+        .recommendation-card {
             background: rgba(17, 21, 29, 0.88);
             border: 1px solid rgba(199, 206, 216, 0.16);
             border-radius: 16px;
+        }
+
+        .metric-card {
             padding: 1.1rem 1.25rem;
             min-height: 116px;
         }
 
-        .metric-label {
+        .metric-label,
+        .phase-progress-label,
+        .recommendation-label {
             color: var(--muted);
             font-size: 0.78rem;
             text-transform: uppercase;
@@ -96,6 +104,53 @@ def apply_theme() -> None:
             border-left: 4px solid var(--accent);
             border-radius: 10px;
             margin: 0.55rem 0;
+        }
+
+        .phase-progress-card {
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .phase-progress-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+            margin: 0.25rem 0 0.45rem;
+        }
+
+        .progress-track {
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(199, 206, 216, 0.14);
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #9f182a, #d7263d);
+        }
+
+        .recommendation-card {
+            padding: 1.2rem 1.3rem;
+            min-height: 210px;
+            border-top: 3px solid var(--accent);
+        }
+
+        .recommendation-title {
+            font-size: 1.3rem;
+            font-weight: 800;
+            margin: 0.35rem 0 0.3rem;
+        }
+
+        .recommendation-meta,
+        .recommendation-detail {
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .recommendation-detail {
+            margin-top: 0.9rem;
+            line-height: 1.55;
         }
 
         .library-card {
@@ -135,11 +190,22 @@ def apply_theme() -> None:
             min-height: 2.4rem;
             font-size: 1.45rem;
             font-weight: 800;
-            color: #4fd17b;
+            color: var(--success);
         }
 
         .family-status-off {
             color: #687180;
+        }
+
+        .compact-movie {
+            padding: 0.8rem 0;
+            border-bottom: 1px solid rgba(199, 206, 216, 0.10);
+        }
+
+        .compact-status-line {
+            color: var(--muted);
+            font-size: 0.88rem;
+            margin-top: 0.25rem;
         }
 
         [data-testid="stSidebar"] {
@@ -162,6 +228,30 @@ def apply_theme() -> None:
         .stButton > button:hover {
             border-color: #f25d70;
             color: white;
+        }
+
+        @media (max-width: 760px) {
+            .block-container {
+                padding-top: 1rem;
+            }
+
+            .hero {
+                padding: 1.5rem;
+                border-radius: 16px;
+            }
+
+            .metric-card {
+                min-height: 96px;
+                padding: 0.9rem 1rem;
+            }
+
+            .metric-value {
+                font-size: 1.45rem;
+            }
+
+            .recommendation-card {
+                min-height: auto;
+            }
         }
         </style>
         """,
