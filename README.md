@@ -4,18 +4,27 @@ A family MCU movie watch tracker for the road to **Avengers: Doomsday**.
 
 ## Current milestone
 
-Milestone 1 establishes the Streamlit application shell, visual theme, and the
-initial 40-title movie catalog.
+Milestone 3 adds real family accounts backed by SQLiteCloud.
+
+Completed:
+
+- Streamlit application shell and cinematic theme
+- 40-title MCU movie catalog
+- SQLiteCloud schema and movie seeding
+- Family account creation
+- bcrypt password hashing
+- Login and logout
+- Authenticated Streamlit session state
+- First-created account automatically becomes administrator
 
 ## Planned features
 
-- Family signup and login
 - Personal movie checklist
 - Shared family progress matrix
 - Only the logged-in user can edit their own watched status
 - Progress bars and completion percentages
 - Next-family-movie recommendations
-- SQLiteCloud persistence
+- Administrator tools
 - Streamlit Community Cloud deployment
 
 ## Local setup
@@ -50,13 +59,32 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Run the app
+### 4. Configure SQLiteCloud
+
+Copy `.env.example` to `.env` and set your real connection string:
+
+```text
+SQLITECLOUD_URL=your-sqlitecloud-connection-string
+```
+
+Never commit the real `.env` file.
+
+### 5. Initialize the database
+
+```bash
+python3 -m database.schema
+```
+
+The initializer is safe to run again; the movie seed uses `INSERT OR IGNORE`.
+
+### 6. Run the app
 
 ```bash
 streamlit run app.py
 ```
 
-Streamlit should open the application in your browser automatically.
+Create the first account through the app. The first account is automatically
+marked as the administrator.
 
 ## Project structure
 
@@ -65,13 +93,19 @@ pyMCUTracker/
 ├── app.py
 ├── requirements.txt
 ├── README.md
+├── .env.example
 ├── auth/
+│   ├── __init__.py
+│   ├── service.py
+│   └── ui.py
 ├── database/
+│   ├── __init__.py
+│   ├── connection.py
+│   ├── schema.py
+│   └── users.py
 ├── data/
 │   └── movies.py
 ├── pages/
 └── ui/
     └── theme.py
 ```
-
-Additional modules will be added as each milestone is implemented.
