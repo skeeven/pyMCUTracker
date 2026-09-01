@@ -66,6 +66,55 @@ def get_family_complete_count(
     )
 
 
+def get_phase_family_progress(
+    phase: int,
+    users: list[tuple],
+    statuses: dict[tuple[int, int], bool],
+) -> tuple[int, int]:
+    """Return family-complete movies and total movies for one phase."""
+    phase_movies = [movie for movie in MOVIES if int(movie[3]) == int(phase)]
+    if not users:
+        return 0, len(phase_movies)
+
+    user_ids = [int(user[0]) for user in users]
+    complete = sum(
+        1
+        for movie_id, *_ in phase_movies
+        if all(
+            statuses.get((user_id, int(movie_id)), False)
+            for user_id in user_ids
+        )
+    )
+    return complete, len(phase_movies)
+
+
+def render_phase_progress(
+    users: list[tuple],
+    statuses: dict[tuple[int, int], bool],
+) -> None:
+    """Render family completion cards for all MCU phases."""
+    st.subheader("Family progress by phase")
+    phase_columns = st.columns(3)
+
+    for phase in range(1, 7):
+        complete, total = get_phase_family_progress(phase, users, statuses)
+        progress = complete / total if total else 0.0
+        width = int(progress * 100)
+        with phase_columns[(phase - 1) % 3]:
+            st.markdown(
+                f"""
+                <div class="phase-progress-card">
+                    <div class="phase-progress-label">Phase {phase}</div>
+                    <div class="phase-progress-value">{complete} / {total}</div>
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width:{width}%;"></div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
 def render_dashboard() -> None:
     """Render the authenticated dashboard."""
     users = list(get_active_users())
@@ -94,65 +143,49 @@ def render_dashboard() -> None:
     )
 
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Countdown</div>
-                <div class="metric-value">{days_until_doomsday()} days</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col2:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Your Progress</div>
-                <div class="metric-value">{watched_count} / {total_movies}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col3:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Family Complete</div>
-                <div class="metric-value">{family_complete} / {total_movies}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col4:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Family Members</div>
-                <div class="metric-value">{len(users)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.subheader("Your mission progress")
-    st.progress(progress)
-    st.caption(f"{progress:.0%} of your personal watchlist complete")
-
-    st.subheader("Family mission progress")
-    st.progress(family_progress)
-    st.caption(
-        f"{family_progress:.0%} of the catalog has been watched by everyone"
+    metrics = (
+        (col1, "Countdown", f"{days_until_doomsday()} days"),
+        (col2, "Your Progress", f"{watched_count} / {total_movies}"),
+        (col3, "Family Complete", f"{family_complete} / {total_movies}"),
+        (col4, "Family Members", str(len(users))),
     )
+    for column, label, value in metrics:
+        with column:
+            st.markdown(
+                f"""
+                <div class="metric-card">
+                    <div class="metric-label">{label}</div>
+                    <div class="metric-value">{value}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    progress_col, family_col = st.columns(2)
+    with progress_col:
+        st.subheader("Your mission progress")
+        st.progress(progress)
+        st.caption(f"{progress:.0%} of your personal watchlist complete")
+    with family_col:
+        st.subheader("Family mission progress")
+        st.progress(family_progress)
+        st.caption(
+            f"{family_progress:.0%} of the catalog has been watched by everyone"
+        )
+
+    render_phase_progress(users, statuses)
 
     if users:
-        st.subheader("Family progress")
-        for user in users:
+        st.subheader("Family members")
+        member_columns = st.columns(min(len(users), 4))
+        for index, user in enumerate(users):
             user_id, name, _, _ = user
             member_count = get_member_watched_count(int(user_id), statuses)
             member_progress = member_count / total_movies if total_movies else 0.0
-            st.write(f"**{name}** — {member_count}/{total_movies}")
-            st.progress(member_progress)
+            with member_columns[index % len(member_columns)]:
+                st.write(f"**{name}**")
+                st.progress(member_progress)
+                st.caption(f"{member_count}/{total_movies} · {member_progress:.0%}")
 
     recommendation_col, tonight_col = st.columns(2)
 
@@ -169,13 +202,14 @@ def render_dashboard() -> None:
             missing_text = ", ".join(missing_names) if missing_names else "Nobody"
             st.markdown(
                 f"""
-                <div class="phase-card">
-                    <strong>🎬 {title}</strong><br>
-                    Phase {phase} &nbsp;·&nbsp; {year_text}<br><br>
-                    <span style="color:#a7afbd;">
-                        Still needs it: {missing_text}<br>
+                <div class="recommendation-card">
+                    <div class="recommendation-label">Release Order Mission</div>
+                    <div class="recommendation-title">🎬 {title}</div>
+                    <div class="recommendation-meta">Phase {phase} · {year_text}</div>
+                    <div class="recommendation-detail">
+                        <strong>Still needs it:</strong> {missing_text}<br>
                         Earliest release-order title not yet complete for the family.
-                    </span>
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -191,13 +225,14 @@ def render_dashboard() -> None:
             missing_text = ", ".join(missing_names)
             st.markdown(
                 f"""
-                <div class="phase-card">
-                    <strong>🍿 {title}</strong><br>
-                    Phase {phase} &nbsp;·&nbsp; {release_year}<br><br>
-                    <span style="color:#a7afbd;">
-                        Helps {len(missing_names)} family member(s): {missing_text}<br>
+                <div class="recommendation-card">
+                    <div class="recommendation-label">Biggest Shared Win</div>
+                    <div class="recommendation-title">🍿 {title}</div>
+                    <div class="recommendation-meta">Phase {phase} · {release_year}</div>
+                    <div class="recommendation-detail">
+                        <strong>Helps {len(missing_names)}:</strong> {missing_text}<br>
                         Chosen to make the biggest shared progress tonight.
-                    </span>
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
