@@ -114,6 +114,27 @@ def update_user_name(
         connection.close()
 
 
+def update_user_password_hash(
+    admin_user_id: int,
+    user_id: int,
+    password_hash: str,
+) -> None:
+    """Replace a family member's password hash as an administrator."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        _require_admin(cursor, admin_user_id)
+        cursor.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (password_hash, user_id),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError("Family member was not found.")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def set_user_active(
     admin_user_id: int,
     user_id: int,
