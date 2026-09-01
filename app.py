@@ -16,6 +16,11 @@ from database.user_movies import (
     get_watched_count,
 )
 from database.users import get_active_users
+from services.recommendations import (
+    get_missing_member_names,
+    get_next_family_movie,
+    get_tonight_recommendation,
+)
 from ui.theme import apply_theme
 from views.family_tracker import render_family_tracker
 from views.movie_library import render_movie_library
@@ -29,42 +34,49 @@ def days_until_doomsday() -> int:
     return max((DOOMSDAY_DATE - date.today()).days, 0)
 
 
-def get_family_dashboard_summary() -> tuple[int, tuple | None, int]:
-    """Return family-complete count, next movie, and active member count."""
-    users = get_active_users()
-    statuses = get_family_movie_statuses()
+def get_member_watched_count(
+    user_id: int,
+    statuses: dict[tuple[int, int], bool],
+) -> int:
+    """Return watched count for one family member from family status data."""
+    return sum(
+        1
+        for movie_id, *_ in MOVIES
+        if statuses.get((int(user_id), int(movie_id)), False)
+    )
+
+
+def get_family_complete_count(
+    users: list[tuple],
+    statuses: dict[tuple[int, int], bool],
+) -> int:
+    """Return the number of movies watched by every active family member."""
+    if not users:
+        return 0
+
     user_ids = [int(user[0]) for user in users]
-
-    if not user_ids:
-        return 0, MOVIES[0] if MOVIES else None, 0
-
-    family_complete = 0
-    next_movie = None
-
-    for movie in MOVIES:
-        movie_id = int(movie[0])
-        watched_by_all = all(
-            statuses.get((user_id, movie_id), False)
+    return sum(
+        1
+        for movie_id, *_ in MOVIES
+        if all(
+            statuses.get((user_id, int(movie_id)), False)
             for user_id in user_ids
         )
-
-        if watched_by_all:
-            family_complete += 1
-        elif next_movie is None:
-            next_movie = movie
-
-    return family_complete, next_movie, len(users)
+    )
 
 
 def render_dashboard() -> None:
     """Render the authenticated dashboard."""
+    users = list(get_active_users())
+    statuses = get_family_movie_statuses()
+
     watched_count = get_watched_count(st.session_state.user_id)
     total_movies = len(MOVIES)
     progress = watched_count / total_movies if total_movies else 0.0
-    family_complete, next_movie, member_count = get_family_dashboard_summary()
-    family_progress = (
-        family_complete / total_movies if total_movies else 0.0
-    )
+    family_complete = get_family_complete_count(users, statuses)
+    family_progress = family_complete / total_movies if total_movies else 0.0
+    next_movie = get_next_family_movie(users, statuses)
+    tonight_pick = get_tonight_recommendation(users, statuses)
 
     st.markdown(
         """
@@ -116,7 +128,7 @@ def render_dashboard() -> None:
             f"""
             <div class="metric-card">
                 <div class="metric-label">Family Members</div>
-                <div class="metric-value">{member_count}</div>
+                <div class="metric-value">{len(users)}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -132,42 +144,71 @@ def render_dashboard() -> None:
         f"{family_progress:.0%} of the catalog has been watched by everyone"
     )
 
-    if next_movie:
-        _, title, release_year, phase = next_movie
-        year_text = str(release_year) if release_year else "TBA"
-        st.markdown(
-            f"""
-            <div class="phase-card">
-                <strong>🎬 Next Family Movie</strong><br>
-                {title} &nbsp;·&nbsp; Phase {phase} &nbsp;·&nbsp; {year_text}<br>
-                <span style="color:#a7afbd;">
-                    Earliest release-order title someone in the family
-                    still needs to watch.
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    elif total_movies:
-        st.success("Family mission complete — everyone has watched all 40 movies!")
+    if users:
+        st.subheader("Family progress")
+        for user in users:
+            user_id, name, _, _ = user
+            member_count = get_member_watched_count(int(user_id), statuses)
+            member_progress = member_count / total_movies if total_movies else 0.0
+            st.write(f"**{name}** — {member_count}/{total_movies}")
+            st.progress(member_progress)
+
+    recommendation_col, tonight_col = st.columns(2)
+
+    with recommendation_col:
+        st.subheader("Next Family Movie")
+        if next_movie:
+            movie_id, title, release_year, phase = next_movie
+            year_text = str(release_year) if release_year else "TBA"
+            missing_names = get_missing_member_names(
+                int(movie_id),
+                users,
+                statuses,
+            )
+            missing_text = ", ".join(missing_names) if missing_names else "Nobody"
+            st.markdown(
+                f"""
+                <div class="phase-card">
+                    <strong>🎬 {title}</strong><br>
+                    Phase {phase} &nbsp;·&nbsp; {year_text}<br><br>
+                    <span style="color:#a7afbd;">
+                        Still needs it: {missing_text}<br>
+                        Earliest release-order title not yet complete for the family.
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        elif total_movies:
+            st.success("Everyone has completed the full family watchlist!")
+
+    with tonight_col:
+        st.subheader("What Should We Watch Tonight?")
+        if tonight_pick:
+            movie, missing_names = tonight_pick
+            _, title, release_year, phase = movie
+            missing_text = ", ".join(missing_names)
+            st.markdown(
+                f"""
+                <div class="phase-card">
+                    <strong>🍿 {title}</strong><br>
+                    Phase {phase} &nbsp;·&nbsp; {release_year}<br><br>
+                    <span style="color:#a7afbd;">
+                        Helps {len(missing_names)} family member(s): {missing_text}<br>
+                        Chosen to make the biggest shared progress tonight.
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.success("No released movie in the catalog is still needed.")
 
     st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
         "Use **My Movies** to update your progress, **Family Tracker** to "
         "compare everyone, and **Movie Library** to browse the full catalog."
     )
-
-    for phase in range(1, 7):
-        count = sum(1 for movie in MOVIES if movie[3] == phase)
-        st.markdown(
-            f"""
-            <div class="phase-card">
-                <strong>Phase {phase}</strong><br>
-                {count} movies in the tracker
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
 
 def render_sidebar() -> str:
