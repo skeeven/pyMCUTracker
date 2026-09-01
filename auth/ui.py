@@ -63,6 +63,12 @@ def render_login_form() -> None:
         set_authenticated_user(user)
         st.rerun()
 
+    with st.expander("Forgot password?"):
+        st.write(
+            "Ask your family administrator to reset your password from "
+            "**Manage Family**. Your movie progress will not be affected."
+        )
+
 
 def render_signup_form() -> None:
     """Render the account creation form."""
