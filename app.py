@@ -4,9 +4,14 @@ from datetime import date
 
 import streamlit as st
 
+from auth.ui import (
+    initialize_auth_state,
+    is_logged_in,
+    logout,
+    render_auth_page,
+)
 from data.movies import MOVIES
 from ui.theme import apply_theme
-
 
 DOOMSDAY_DATE = date(2026, 12, 18)
 
@@ -17,7 +22,7 @@ def days_until_doomsday() -> int:
 
 
 def render_dashboard() -> None:
-    """Render the initial dashboard shell."""
+    """Render the authenticated dashboard."""
     st.markdown(
         """
         <section class="hero">
@@ -57,18 +62,17 @@ def render_dashboard() -> None:
         st.markdown(
             """
             <div class="metric-card">
-                <div class="metric-label">Family Status</div>
-                <div class="metric-value">Coming next</div>
+                <div class="metric-label">Your Status</div>
+                <div class="metric-value">Tracker ready</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    st.subheader("Mission roadmap")
+    st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
-        "The first milestone establishes the visual shell. Account creation, "
-        "personal checklists, family tracking, and shared progress will be "
-        "added in the next milestones."
+        "Your account is connected. The next milestone will turn My Movies "
+        "into your personal, editable 40-title checklist."
     )
 
     for phase in range(1, 7):
@@ -84,16 +88,8 @@ def render_dashboard() -> None:
         )
 
 
-def main() -> None:
-    """Configure and run the Streamlit application."""
-    st.set_page_config(
-        page_title="Road to Doomsday",
-        page_icon="🎬",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-    apply_theme()
-
+def render_sidebar() -> None:
+    """Render navigation and authenticated user information."""
     with st.sidebar:
         st.title("Road to Doomsday")
         st.caption("Family MCU Watch Tracker")
@@ -103,8 +99,35 @@ def main() -> None:
         st.write("👥 Family Tracker")
         st.write("📚 Movie Library")
         st.divider()
-        st.caption("Authentication will be added in Milestone 2.")
 
+        st.caption("SIGNED IN AS")
+        st.write(f"**{st.session_state.user_name}**")
+        st.caption(st.session_state.user_email)
+
+        if st.session_state.is_admin:
+            st.caption("🛡️ Administrator")
+
+        if st.button("Log Out", use_container_width=True):
+            logout()
+            st.rerun()
+
+
+def main() -> None:
+    """Configure and run the Streamlit application."""
+    st.set_page_config(
+        page_title="Road to Doomsday",
+        page_icon="🎬",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    apply_theme()
+    initialize_auth_state()
+
+    if not is_logged_in():
+        render_auth_page()
+        return
+
+    render_sidebar()
     render_dashboard()
 
 
