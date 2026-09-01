@@ -13,6 +13,7 @@ from auth.ui import (
 from data.movies import MOVIES
 from database.user_movies import get_watched_count
 from ui.theme import apply_theme
+from views.family_tracker import render_family_tracker
 from views.my_movies import render_my_movies
 
 DOOMSDAY_DATE = date(2026, 12, 18)
@@ -80,8 +81,8 @@ def render_dashboard() -> None:
 
     st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
-        "Open **My Movies** from the sidebar to update your personal "
-        "watchlist. Your checked movies are saved to SQLiteCloud."
+        "Open **My Movies** to update your personal watchlist or "
+        "**Family Tracker** to compare progress across the family."
     )
 
     for phase in range(1, 7):
@@ -151,15 +152,11 @@ def render_selected_page(page: str) -> None:
     elif page == "🎞️ My Movies":
         render_my_movies(st.session_state.user_id)
     elif page == "👥 Family Tracker":
-        render_placeholder(
-            "Family Tracker",
-            "The shared family watch matrix is the next milestone.",
-        )
+        render_family_tracker(st.session_state.user_id)
     else:
         render_placeholder(
             "Movie Library",
-            "Movie details and browsing tools will be added after the "
-            "family tracker.",
+            "Movie details and browsing tools will be added next.",
         )
 
 
