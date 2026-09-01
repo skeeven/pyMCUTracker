@@ -11,9 +11,14 @@ from auth.ui import (
     render_auth_page,
 )
 from data.movies import MOVIES
-from database.user_movies import get_watched_count
+from database.user_movies import (
+    get_family_movie_statuses,
+    get_watched_count,
+)
+from database.users import get_active_users
 from ui.theme import apply_theme
 from views.family_tracker import render_family_tracker
+from views.movie_library import render_movie_library
 from views.my_movies import render_my_movies
 
 DOOMSDAY_DATE = date(2026, 12, 18)
@@ -24,11 +29,42 @@ def days_until_doomsday() -> int:
     return max((DOOMSDAY_DATE - date.today()).days, 0)
 
 
+def get_family_dashboard_summary() -> tuple[int, tuple | None, int]:
+    """Return family-complete count, next movie, and active member count."""
+    users = get_active_users()
+    statuses = get_family_movie_statuses()
+    user_ids = [int(user[0]) for user in users]
+
+    if not user_ids:
+        return 0, MOVIES[0] if MOVIES else None, 0
+
+    family_complete = 0
+    next_movie = None
+
+    for movie in MOVIES:
+        movie_id = int(movie[0])
+        watched_by_all = all(
+            statuses.get((user_id, movie_id), False)
+            for user_id in user_ids
+        )
+
+        if watched_by_all:
+            family_complete += 1
+        elif next_movie is None:
+            next_movie = movie
+
+    return family_complete, next_movie, len(users)
+
+
 def render_dashboard() -> None:
     """Render the authenticated dashboard."""
     watched_count = get_watched_count(st.session_state.user_id)
     total_movies = len(MOVIES)
     progress = watched_count / total_movies if total_movies else 0.0
+    family_complete, next_movie, member_count = get_family_dashboard_summary()
+    family_progress = (
+        family_complete / total_movies if total_movies else 0.0
+    )
 
     st.markdown(
         """
@@ -44,7 +80,7 @@ def render_dashboard() -> None:
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(
             f"""
@@ -59,8 +95,8 @@ def render_dashboard() -> None:
         st.markdown(
             f"""
             <div class="metric-card">
-                <div class="metric-label">Movie Challenge</div>
-                <div class="metric-value">{total_movies} titles</div>
+                <div class="metric-label">Your Progress</div>
+                <div class="metric-value">{watched_count} / {total_movies}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -69,20 +105,56 @@ def render_dashboard() -> None:
         st.markdown(
             f"""
             <div class="metric-card">
-                <div class="metric-label">Your Progress</div>
-                <div class="metric-value">{watched_count} / {total_movies}</div>
+                <div class="metric-label">Family Complete</div>
+                <div class="metric-value">{family_complete} / {total_movies}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col4:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Family Members</div>
+                <div class="metric-value">{member_count}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
+    st.subheader("Your mission progress")
     st.progress(progress)
-    st.caption(f"{progress:.0%} of your Road to Doomsday watchlist complete")
+    st.caption(f"{progress:.0%} of your personal watchlist complete")
+
+    st.subheader("Family mission progress")
+    st.progress(family_progress)
+    st.caption(
+        f"{family_progress:.0%} of the catalog has been watched by everyone"
+    )
+
+    if next_movie:
+        _, title, release_year, phase = next_movie
+        year_text = str(release_year) if release_year else "TBA"
+        st.markdown(
+            f"""
+            <div class="phase-card">
+                <strong>🎬 Next Family Movie</strong><br>
+                {title} &nbsp;·&nbsp; Phase {phase} &nbsp;·&nbsp; {year_text}<br>
+                <span style="color:#a7afbd;">
+                    Earliest release-order title someone in the family
+                    still needs to watch.
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    elif total_movies:
+        st.success("Family mission complete — everyone has watched all 40 movies!")
 
     st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
-        "Open **My Movies** to update your personal watchlist or "
-        "**Family Tracker** to compare progress across the family."
+        "Use **My Movies** to update your progress, **Family Tracker** to "
+        "compare everyone, and **Movie Library** to browse the full catalog."
     )
 
     for phase in range(1, 7):
@@ -96,20 +168,6 @@ def render_dashboard() -> None:
             """,
             unsafe_allow_html=True,
         )
-
-
-def render_placeholder(title: str, message: str) -> None:
-    """Render a placeholder for a future application section."""
-    st.markdown(
-        f"""
-        <section class="hero">
-            <div class="eyebrow">Coming Soon</div>
-            <h1>{title}</h1>
-            <p>{message}</p>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 def render_sidebar() -> str:
@@ -154,10 +212,7 @@ def render_selected_page(page: str) -> None:
     elif page == "👥 Family Tracker":
         render_family_tracker(st.session_state.user_id)
     else:
-        render_placeholder(
-            "Movie Library",
-            "Movie details and browsing tools will be added next.",
-        )
+        render_movie_library()
 
 
 def main() -> None:
