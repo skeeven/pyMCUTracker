@@ -11,7 +11,9 @@ from auth.ui import (
     render_auth_page,
 )
 from data.movies import MOVIES
+from database.user_movies import get_watched_count
 from ui.theme import apply_theme
+from views.my_movies import render_my_movies
 
 DOOMSDAY_DATE = date(2026, 12, 18)
 
@@ -23,6 +25,10 @@ def days_until_doomsday() -> int:
 
 def render_dashboard() -> None:
     """Render the authenticated dashboard."""
+    watched_count = get_watched_count(st.session_state.user_id)
+    total_movies = len(MOVIES)
+    progress = watched_count / total_movies if total_movies else 0.0
+
     st.markdown(
         """
         <section class="hero">
@@ -53,26 +59,29 @@ def render_dashboard() -> None:
             f"""
             <div class="metric-card">
                 <div class="metric-label">Movie Challenge</div>
-                <div class="metric-value">{len(MOVIES)} titles</div>
+                <div class="metric-value">{total_movies} titles</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
     with col3:
         st.markdown(
-            """
+            f"""
             <div class="metric-card">
-                <div class="metric-label">Your Status</div>
-                <div class="metric-value">Tracker ready</div>
+                <div class="metric-label">Your Progress</div>
+                <div class="metric-value">{watched_count} / {total_movies}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
+    st.progress(progress)
+    st.caption(f"{progress:.0%} of your Road to Doomsday watchlist complete")
+
     st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
-        "Your account is connected. The next milestone will turn My Movies "
-        "into your personal, editable 40-title checklist."
+        "Open **My Movies** from the sidebar to update your personal "
+        "watchlist. Your checked movies are saved to SQLiteCloud."
     )
 
     for phase in range(1, 7):
@@ -88,18 +97,39 @@ def render_dashboard() -> None:
         )
 
 
-def render_sidebar() -> None:
-    """Render navigation and authenticated user information."""
+def render_placeholder(title: str, message: str) -> None:
+    """Render a placeholder for a future application section."""
+    st.markdown(
+        f"""
+        <section class="hero">
+            <div class="eyebrow">Coming Soon</div>
+            <h1>{title}</h1>
+            <p>{message}</p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar() -> str:
+    """Render navigation and return the selected page."""
     with st.sidebar:
         st.title("Road to Doomsday")
         st.caption("Family MCU Watch Tracker")
         st.divider()
-        st.write("🏠 Dashboard")
-        st.write("🎞️ My Movies")
-        st.write("👥 Family Tracker")
-        st.write("📚 Movie Library")
-        st.divider()
 
+        page = st.radio(
+            "Navigation",
+            options=[
+                "🏠 Dashboard",
+                "🎞️ My Movies",
+                "👥 Family Tracker",
+                "📚 Movie Library",
+            ],
+            label_visibility="collapsed",
+        )
+
+        st.divider()
         st.caption("SIGNED IN AS")
         st.write(f"**{st.session_state.user_name}**")
         st.caption(st.session_state.user_email)
@@ -110,6 +140,27 @@ def render_sidebar() -> None:
         if st.button("Log Out", use_container_width=True):
             logout()
             st.rerun()
+
+        return page
+
+
+def render_selected_page(page: str) -> None:
+    """Render the page selected in the authenticated sidebar."""
+    if page == "🏠 Dashboard":
+        render_dashboard()
+    elif page == "🎞️ My Movies":
+        render_my_movies(st.session_state.user_id)
+    elif page == "👥 Family Tracker":
+        render_placeholder(
+            "Family Tracker",
+            "The shared family watch matrix is the next milestone.",
+        )
+    else:
+        render_placeholder(
+            "Movie Library",
+            "Movie details and browsing tools will be added after the "
+            "family tracker.",
+        )
 
 
 def main() -> None:
@@ -127,8 +178,8 @@ def main() -> None:
         render_auth_page()
         return
 
-    render_sidebar()
-    render_dashboard()
+    page = render_sidebar()
+    render_selected_page(page)
 
 
 if __name__ == "__main__":
