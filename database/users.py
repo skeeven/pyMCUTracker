@@ -39,6 +39,24 @@ def get_user_by_id(user_id: int):
         connection.close()
 
 
+def get_active_users() -> list[tuple]:
+    """Return active family members ordered by account creation."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            SELECT id, name, email, is_admin
+            FROM users
+            WHERE is_active = 1
+            ORDER BY id
+            """
+        )
+        return cursor.fetchall()
+    finally:
+        connection.close()
+
+
 def create_user(name: str, email: str, password_hash: str):
     """Create a user and return the newly created user row.
 
