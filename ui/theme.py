@@ -98,6 +98,20 @@ def apply_theme() -> None:
             margin: 0.55rem 0;
         }
 
+        .family-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 2.4rem;
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #4fd17b;
+        }
+
+        .family-status-off {
+            color: #687180;
+        }
+
         [data-testid="stSidebar"] {
             background: #0c1017;
             border-right: 1px solid rgba(199, 206, 216, 0.12);
