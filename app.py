@@ -22,6 +22,7 @@ from services.recommendations import (
     get_tonight_recommendation,
 )
 from ui.theme import apply_theme
+from views.admin import render_admin_page
 from views.family_tracker import render_family_tracker
 from views.movie_library import render_movie_library
 from views.my_movies import render_my_movies
@@ -218,14 +219,18 @@ def render_sidebar() -> str:
         st.caption("Family MCU Watch Tracker")
         st.divider()
 
+        options = [
+            "🏠 Dashboard",
+            "🎞️ My Movies",
+            "👥 Family Tracker",
+            "📚 Movie Library",
+        ]
+        if st.session_state.is_admin:
+            options.append("🛡️ Manage Family")
+
         page = st.radio(
             "Navigation",
-            options=[
-                "🏠 Dashboard",
-                "🎞️ My Movies",
-                "👥 Family Tracker",
-                "📚 Movie Library",
-            ],
+            options=options,
             label_visibility="collapsed",
         )
 
@@ -252,8 +257,10 @@ def render_selected_page(page: str) -> None:
         render_my_movies(st.session_state.user_id)
     elif page == "👥 Family Tracker":
         render_family_tracker(st.session_state.user_id)
-    else:
+    elif page == "📚 Movie Library":
         render_movie_library()
+    elif page == "🛡️ Manage Family":
+        render_admin_page(st.session_state.user_id)
 
 
 def main() -> None:
