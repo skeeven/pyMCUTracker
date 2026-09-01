@@ -4,9 +4,14 @@ import re
 
 import bcrypt
 
-from database.users import create_user, get_user_by_email
+from database.users import (
+    create_user,
+    get_user_by_email,
+    update_user_password_hash,
+)
 
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+MIN_PASSWORD_LENGTH = 8
 
 
 def hash_password(password: str) -> str:
@@ -40,13 +45,52 @@ def validate_signup(
     if not EMAIL_PATTERN.match(email.strip()):
         errors.append("Enter a valid email address.")
 
-    if len(password) < 8:
-        errors.append("Password must contain at least 8 characters.")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        errors.append(
+            f"Password must contain at least {MIN_PASSWORD_LENGTH} characters."
+        )
 
     if password != confirm_password:
         errors.append("Passwords do not match.")
 
     return errors
+
+
+def validate_password_reset(
+    password: str,
+    confirm_password: str,
+) -> list[str]:
+    """Return validation messages for a replacement password."""
+    errors = []
+
+    if len(password) < MIN_PASSWORD_LENGTH:
+        errors.append(
+            f"Password must contain at least {MIN_PASSWORD_LENGTH} characters."
+        )
+
+    if password != confirm_password:
+        errors.append("Passwords do not match.")
+
+    return errors
+
+
+def reset_user_password_as_admin(
+    admin_user_id: int,
+    user_id: int,
+    password: str,
+    confirm_password: str,
+) -> list[str]:
+    """Validate and replace a family member's password as an administrator."""
+    errors = validate_password_reset(password, confirm_password)
+    if errors:
+        return errors
+
+    update_user_password_hash(
+        admin_user_id,
+        user_id,
+        hash_password(password),
+    )
+    return []
 
 
 def register_user(
