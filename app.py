@@ -11,6 +11,7 @@ from auth.ui import (
     render_auth_page,
 )
 from data.movies import MOVIES
+from database.connection import DatabaseConnectionError
 from database.user_movies import (
     get_family_movie_statuses,
     get_watched_count,
@@ -298,6 +299,15 @@ def render_selected_page(page: str) -> None:
         render_admin_page(st.session_state.user_id)
 
 
+def render_database_error(error: DatabaseConnectionError) -> None:
+    """Show a friendly message when SQLiteCloud cannot be reached."""
+    st.error(str(error))
+    st.info(
+        "Your saved watch data has not been changed. Check the database "
+        "configuration or try refreshing the app in a moment."
+    )
+
+
 def main() -> None:
     """Configure and run the Streamlit application."""
     st.set_page_config(
@@ -309,12 +319,15 @@ def main() -> None:
     apply_theme()
     initialize_auth_state()
 
-    if not is_logged_in():
-        render_auth_page()
-        return
+    try:
+        if not is_logged_in():
+            render_auth_page()
+            return
 
-    page = render_sidebar()
-    render_selected_page(page)
+        page = render_sidebar()
+        render_selected_page(page)
+    except DatabaseConnectionError as error:
+        render_database_error(error)
 
 
 if __name__ == "__main__":
