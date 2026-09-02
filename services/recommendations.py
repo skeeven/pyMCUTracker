@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 from datetime import date
 
-from data.movies import MOVIES
+from database.movies import get_active_movies
 
 
 UNRELEASED_TITLES = {
@@ -30,14 +30,16 @@ def get_missing_member_names(
 def get_next_family_movie(
     users: Iterable[tuple],
     statuses: dict[tuple[int, int], bool],
+    movies: Iterable[tuple] | None = None,
 ):
-    """Return earliest release-order movie not watched by every member."""
+    """Return earliest watch-order movie not watched by every member."""
+    movie_list = list(movies) if movies is not None else list(get_active_movies())
     user_list = list(users)
     if not user_list:
-        return MOVIES[0] if MOVIES else None
+        return movie_list[0] if movie_list else None
 
     user_ids = [int(user[0]) for user in user_list]
-    for movie in MOVIES:
+    for movie in movie_list:
         movie_id = int(movie[0])
         if not all(
             statuses.get((user_id, movie_id), False)
@@ -51,13 +53,10 @@ def get_tonight_recommendation(
     users: Iterable[tuple],
     statuses: dict[tuple[int, int], bool],
     today: date | None = None,
+    movies: Iterable[tuple] | None = None,
 ):
-    """Return a movie that advances the most family members at once.
-
-    Candidates must have a known release year no later than the current year
-    and must not be explicitly marked as unreleased. Ties are broken by the
-    catalog's release order.
-    """
+    """Return a released movie that advances the most family members at once."""
+    movie_list = list(movies) if movies is not None else list(get_active_movies())
     user_list = list(users)
     if not user_list:
         return None
@@ -65,7 +64,7 @@ def get_tonight_recommendation(
     current_date = today or date.today()
     candidates = []
 
-    for movie in MOVIES:
+    for movie in movie_list:
         movie_id, title, release_year, _ = movie
         if release_year is None:
             continue
