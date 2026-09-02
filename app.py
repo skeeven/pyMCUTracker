@@ -7,6 +7,7 @@ import streamlit as st
 from auth.ui import initialize_auth_state, is_logged_in, logout, render_auth_page
 from database.connection import DatabaseConnectionError
 from database.movies import get_active_movies
+from database.schema import initialize_database
 from database.user_movies import get_family_movie_statuses, get_watched_count
 from database.users import get_active_users
 from services.recommendations import (
@@ -21,6 +22,12 @@ from views.movie_library import render_movie_library
 from views.my_movies import render_my_movies
 
 DOOMSDAY_DATE = date(2026, 12, 18)
+
+
+@st.cache_resource
+def prepare_database() -> None:
+    """Create and migrate the database once per application process."""
+    initialize_database()
 
 
 def days_until_doomsday() -> int:
@@ -287,6 +294,7 @@ def main() -> None:
     initialize_auth_state()
 
     try:
+        prepare_database()
         if not is_logged_in():
             render_auth_page()
             return
