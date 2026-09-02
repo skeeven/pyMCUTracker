@@ -20,8 +20,15 @@ SCHEMA_STATEMENTS = (
         id INTEGER PRIMARY KEY,
         title TEXT NOT NULL UNIQUE,
         release_year INTEGER,
-        phase INTEGER NOT NULL,
-        release_order INTEGER NOT NULL UNIQUE
+        phase INTEGER NOT NULL DEFAULT 0,
+        release_order INTEGER NOT NULL UNIQUE,
+        release_date TEXT,
+        category TEXT NOT NULL DEFAULT 'MCU',
+        universe TEXT NOT NULL DEFAULT 'Marvel Cinematic Universe',
+        is_core_mcu INTEGER NOT NULL DEFAULT 1,
+        is_doomsday_relevant INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT
     )
     """,
     """
@@ -40,6 +47,16 @@ SCHEMA_STATEMENTS = (
     """,
 )
 
+MOVIE_COLUMNS = {
+    "release_date": "TEXT",
+    "category": "TEXT NOT NULL DEFAULT 'MCU'",
+    "universe": "TEXT NOT NULL DEFAULT 'Marvel Cinematic Universe'",
+    "is_core_mcu": "INTEGER NOT NULL DEFAULT 1",
+    "is_doomsday_relevant": "INTEGER NOT NULL DEFAULT 1",
+    "is_active": "INTEGER NOT NULL DEFAULT 1",
+    "notes": "TEXT",
+}
+
 
 def create_schema() -> None:
     """Create all application tables if they do not already exist."""
@@ -53,8 +70,26 @@ def create_schema() -> None:
         connection.close()
 
 
+def migrate_movie_schema() -> None:
+    """Add newer catalog fields to an existing movies table safely."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA table_info(movies)")
+        existing_columns = {str(row[1]) for row in cursor.fetchall()}
+
+        for column_name, definition in MOVIE_COLUMNS.items():
+            if column_name not in existing_columns:
+                cursor.execute(
+                    f"ALTER TABLE movies ADD COLUMN {column_name} {definition}"
+                )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def seed_movies() -> None:
-    """Insert the MCU catalog without duplicating existing movies."""
+    """Insert the original MCU catalog without duplicating existing movies."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
@@ -66,9 +101,14 @@ def seed_movies() -> None:
                     title,
                     release_year,
                     phase,
-                    release_order
+                    release_order,
+                    category,
+                    universe,
+                    is_core_mcu,
+                    is_doomsday_relevant,
+                    is_active
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'MCU', 'Marvel Cinematic Universe', 1, 1, 1)
                 """,
                 (
                     release_order,
@@ -84,11 +124,12 @@ def seed_movies() -> None:
 
 
 def initialize_database() -> None:
-    """Create the schema and seed all initial application data."""
+    """Create, migrate, and seed all application data."""
     create_schema()
+    migrate_movie_schema()
     seed_movies()
 
 
 if __name__ == "__main__":
     initialize_database()
-    print("Database initialized successfully with MCU movie catalog.")
+    print("Database initialized successfully with movie catalog support.")
