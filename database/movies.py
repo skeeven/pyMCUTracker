@@ -2,6 +2,8 @@
 
 from database.connection import get_connection
 
+ORDER_OFFSET = 100000
+
 
 def get_active_movies() -> list[tuple]:
     """Return active movies in watch order using the legacy four-field shape."""
@@ -66,6 +68,81 @@ def _next_movie_id(cursor) -> int:
     return int(cursor.fetchone()[0])
 
 
+def _make_room_for_order(cursor, release_order: int) -> None:
+    """Shift movies at or after an order down one position safely."""
+    cursor.execute(
+        "UPDATE movies SET release_order = release_order + ? WHERE release_order >= ?",
+        (ORDER_OFFSET, release_order),
+    )
+    cursor.execute(
+        """
+        UPDATE movies
+        SET release_order = release_order - ?
+        WHERE release_order >= ?
+        """,
+        (ORDER_OFFSET - 1, ORDER_OFFSET + release_order),
+    )
+
+
+def _move_movie(cursor, movie_id: int, old_order: int, new_order: int) -> None:
+    """Move one movie and close the resulting watch-order gap."""
+    if old_order == new_order:
+        return
+
+    cursor.execute(
+        "UPDATE movies SET release_order = ? WHERE id = ?",
+        (-int(movie_id), movie_id),
+    )
+
+    if new_order < old_order:
+        cursor.execute(
+            """
+            UPDATE movies
+            SET release_order = release_order + ?
+            WHERE release_order >= ? AND release_order < ?
+            """,
+            (ORDER_OFFSET, new_order, old_order),
+        )
+        cursor.execute(
+            """
+            UPDATE movies
+            SET release_order = release_order - ?
+            WHERE release_order >= ? AND release_order < ?
+            """,
+            (
+                ORDER_OFFSET - 1,
+                ORDER_OFFSET + new_order,
+                ORDER_OFFSET + old_order,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE movies
+            SET release_order = release_order + ?
+            WHERE release_order > ? AND release_order <= ?
+            """,
+            (ORDER_OFFSET, old_order, new_order),
+        )
+        cursor.execute(
+            """
+            UPDATE movies
+            SET release_order = release_order - ?
+            WHERE release_order > ? AND release_order <= ?
+            """,
+            (
+                ORDER_OFFSET + 1,
+                ORDER_OFFSET + old_order,
+                ORDER_OFFSET + new_order,
+            ),
+        )
+
+    cursor.execute(
+        "UPDATE movies SET release_order = ? WHERE id = ?",
+        (new_order, movie_id),
+    )
+
+
 def add_movie(
     admin_user_id: int,
     title: str,
@@ -93,6 +170,7 @@ def add_movie(
         cursor = connection.cursor()
         _require_admin(cursor, admin_user_id)
         movie_id = _next_movie_id(cursor)
+        _make_room_for_order(cursor, release_order)
         cursor.execute(
             """
             INSERT INTO movies (
@@ -148,14 +226,21 @@ def update_movie(
     try:
         cursor = connection.cursor()
         _require_admin(cursor, admin_user_id)
-        cursor.execute("SELECT id FROM movies WHERE id = ?", (movie_id,))
-        if cursor.fetchone() is None:
+        cursor.execute(
+            "SELECT release_order FROM movies WHERE id = ?",
+            (movie_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
             raise ValueError("Movie was not found.")
+
+        old_order = int(row[0])
+        _move_movie(cursor, movie_id, old_order, release_order)
         cursor.execute(
             """
             UPDATE movies
             SET title = ?, release_year = ?, release_date = ?, phase = ?,
-                release_order = ?, category = ?, universe = ?, is_core_mcu = ?,
+                category = ?, universe = ?, is_core_mcu = ?,
                 is_doomsday_relevant = ?, notes = ?
             WHERE id = ?
             """,
@@ -164,7 +249,6 @@ def update_movie(
                 release_year,
                 release_date or None,
                 phase,
-                release_order,
                 category.strip() or "MCU",
                 universe.strip() or "Marvel Cinematic Universe",
                 int(is_core_mcu),
