@@ -93,15 +93,18 @@ def set_movie_watched(
 
 
 def get_watched_count(user_id: int) -> int:
-    """Return the number of movies marked watched by one user."""
+    """Return watched count for active movies in the current catalog."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
         cursor.execute(
             """
             SELECT COUNT(*)
-            FROM user_movies
-            WHERE user_id = ? AND watched = 1
+            FROM user_movies um
+            JOIN movies m ON m.id = um.movie_id
+            WHERE um.user_id = ?
+              AND um.watched = 1
+              AND m.is_active = 1
             """,
             (user_id,),
         )
