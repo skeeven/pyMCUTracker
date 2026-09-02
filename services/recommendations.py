@@ -64,7 +64,7 @@ def get_tonight_recommendation(
     current_date = today or date.today()
     candidates = []
 
-    for movie in movie_list:
+    for watch_index, movie in enumerate(movie_list):
         movie_id, title, release_year, _ = movie
         if release_year is None:
             continue
@@ -81,7 +81,7 @@ def get_tonight_recommendation(
         if not missing:
             continue
 
-        candidates.append((len(missing), int(movie_id), movie, missing))
+        candidates.append((len(missing), watch_index, movie, missing))
 
     if not candidates:
         return None
