@@ -2,18 +2,25 @@
 
 import streamlit as st
 
-from data.movies import MOVIES
+from database.movies import get_active_movies
 from database.user_movies import (
     get_user_movie_statuses,
     set_movie_watched,
 )
 
 
+def _phase_label(phase: int) -> str:
+    return "Supplemental" if int(phase) == 0 else f"Phase {phase}"
+
+
 def render_my_movies(user_id: int) -> None:
-    """Render the logged-in user's editable MCU movie checklist."""
+    """Render the logged-in user's editable movie checklist."""
+    movies = list(get_active_movies())
     statuses = get_user_movie_statuses(user_id)
-    watched_count = sum(1 for watched in statuses.values() if watched)
-    total_movies = len(MOVIES)
+    watched_count = sum(
+        1 for movie_id, *_ in movies if statuses.get(int(movie_id), False)
+    )
+    total_movies = len(movies)
     progress = watched_count / total_movies if total_movies else 0.0
 
     st.markdown(
@@ -22,8 +29,8 @@ def render_my_movies(user_id: int) -> None:
             <div class="eyebrow">Personal Mission Log</div>
             <h1>My Movies</h1>
             <p>
-                Check off each movie as you watch it. Your progress saves
-                automatically to your account.
+                Check off each Road to Doomsday movie as you watch it. Your
+                progress saves automatically to your account.
             </p>
         </section>
         """,
@@ -31,47 +38,44 @@ def render_my_movies(user_id: int) -> None:
     )
 
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Watched", watched_count)
-    with col2:
-        st.metric("Remaining", total_movies - watched_count)
-    with col3:
-        st.metric("Complete", f"{progress:.0%}")
-
+    col1.metric("Watched", watched_count)
+    col2.metric("Remaining", total_movies - watched_count)
+    col3.metric("Complete", f"{progress:.0%}")
     st.progress(progress)
 
+    phases = sorted({int(movie[3]) for movie in movies})
+    phase_options = ["All"] + [
+        "Supplemental" if phase == 0 else str(phase) for phase in phases
+    ]
     phase_filter = st.segmented_control(
-        "Phase",
-        options=["All", "1", "2", "3", "4", "5", "6"],
+        "Section",
+        options=phase_options,
         default="All",
         key="my_movies_phase_filter",
     )
 
-    for phase in range(1, 7):
-        if phase_filter != "All" and phase_filter != str(phase):
+    for phase in phases:
+        filter_value = "Supplemental" if phase == 0 else str(phase)
+        if phase_filter != "All" and phase_filter != filter_value:
             continue
 
-        phase_movies = [movie for movie in MOVIES if movie[3] == phase]
+        phase_movies = [movie for movie in movies if int(movie[3]) == phase]
         phase_watched = sum(
-            1 for movie in phase_movies if statuses.get(movie[0], False)
+            1 for movie in phase_movies if statuses.get(int(movie[0]), False)
         )
 
         st.subheader(
-            f"Phase {phase}  ·  {phase_watched}/{len(phase_movies)} watched"
+            f"{_phase_label(phase)}  ·  {phase_watched}/{len(phase_movies)} watched"
         )
 
         for movie_id, title, release_year, _ in phase_movies:
+            movie_id = int(movie_id)
             checked = statuses.get(movie_id, False)
             year_text = str(release_year) if release_year else "TBA"
-            label = f"{movie_id}. {title} — {year_text}"
+            label = f"{title} — {year_text}"
             key = f"movie_{user_id}_{movie_id}"
 
-            new_value = st.checkbox(
-                label,
-                value=checked,
-                key=key,
-            )
-
+            new_value = st.checkbox(label, value=checked, key=key)
             if new_value != checked:
                 set_movie_watched(user_id, user_id, movie_id, new_value)
                 st.rerun()
