@@ -42,6 +42,29 @@ Each catalog entry can store:
 
 Administrators can manage these fields from **Administration → Movies**. Inserting or moving a title to a watch-order position automatically shifts the surrounding titles. Deactivating a movie hides it from active progress while preserving existing family watch history.
 
+## Load the Mutant Legacy supplemental list
+
+A one-time/idempotent loader is included for the 13 Fox X-Men / Mutant Legacy movies selected for the Road to Doomsday.
+
+After applying the movie-table migration, run:
+
+```bash
+python -m database.seed_supplemental_movies
+```
+
+The loader is safe to run again. It:
+
+- avoids duplicate titles
+- reuses an existing matching row when present
+- marks the titles as Supplemental (`phase = 0`)
+- sets `category = 'Mutant Legacy'`
+- sets `universe = 'Fox X-Men Universe'`
+- sets `is_core_mcu = 0`
+- sets `is_doomsday_relevant = 1`
+- keeps the titles active
+- places the 13 supplemental movies first in their selected legacy viewing order
+- preserves the relative order of the existing MCU catalog after them
+
 ## Local setup
 
 ### 1. Clone the repository
@@ -151,6 +174,7 @@ pyMCUTracker/
 │   ├── connection.py
 │   ├── movies.py
 │   ├── schema.py
+│   ├── seed_supplemental_movies.py
 │   ├── user_movies.py
 │   └── users.py
 ├── data/
