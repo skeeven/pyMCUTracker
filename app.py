@@ -4,7 +4,13 @@ from datetime import date
 
 import streamlit as st
 
-from auth.ui import initialize_auth_state, is_logged_in, logout, render_auth_page
+from auth.ui import (
+    initialize_auth_state,
+    is_logged_in,
+    logout,
+    refresh_authenticated_user,
+    render_auth_page,
+)
 from database.connection import DatabaseConnectionError
 from database.movies import get_active_movies
 from database.schema import DatabaseSchemaError, validate_schema
@@ -303,6 +309,11 @@ def main() -> None:
     try:
         prepare_database()
         if not is_logged_in():
+            render_auth_page()
+            return
+
+        if not refresh_authenticated_user():
+            st.warning("Your account is no longer active. Please sign in again.")
             render_auth_page()
             return
 
