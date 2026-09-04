@@ -6,7 +6,7 @@ from auth.service import reset_user_password_as_admin
 from database.movies import (
     PRIORITY_OPTIONS,
     add_movie,
-    get_all_movies,
+    get_all_movies_with_priority,
     set_movie_active,
     update_movie,
 )
@@ -186,7 +186,7 @@ def _render_add_movie(current_user_id: int, next_order: int) -> None:
 
 def _render_movie_management(current_user_id: int) -> None:
     """Render catalog creation, editing, ordering, and activation controls."""
-    movies = list(get_all_movies())
+    movies = list(get_all_movies_with_priority())
     active_count = sum(1 for movie in movies if bool(movie[11]))
     next_order = max((int(movie[5]) for movie in movies), default=0) + 1
 
