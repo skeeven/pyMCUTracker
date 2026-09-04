@@ -1,5 +1,7 @@
 """Authentication and account creation services."""
 
+import hmac
+import os
 import re
 
 import bcrypt
@@ -28,6 +30,19 @@ def verify_password(password: str, password_hash: str) -> bool:
         password.encode("utf-8"),
         password_hash.encode("utf-8"),
     )
+
+
+def invite_code_required() -> bool:
+    """Return whether family signup is protected by an invite code."""
+    return bool(os.getenv("FAMILY_SIGNUP_CODE", "").strip())
+
+
+def validate_invite_code(invite_code: str) -> bool:
+    """Return whether the supplied family invite code is valid."""
+    expected = os.getenv("FAMILY_SIGNUP_CODE", "").strip()
+    if not expected:
+        return True
+    return hmac.compare_digest(invite_code.strip(), expected)
 
 
 def validate_signup(
@@ -98,9 +113,13 @@ def register_user(
     email: str,
     password: str,
     confirm_password: str,
+    invite_code: str = "",
 ):
     """Validate and create a new user account."""
     errors = validate_signup(name, email, password, confirm_password)
+    if invite_code_required() and not validate_invite_code(invite_code):
+        errors.append("The family invite code is incorrect.")
+
     if errors:
         return None, errors
 
