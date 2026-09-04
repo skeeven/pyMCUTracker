@@ -66,7 +66,6 @@ def get_all_movies() -> list[tuple]:
 
 
 def _require_admin(cursor, admin_user_id: int) -> None:
-    """Raise when the acting account is not an active administrator."""
     cursor.execute(
         "SELECT is_active, is_admin FROM users WHERE id = ?",
         (admin_user_id,),
@@ -82,7 +81,6 @@ def _next_movie_id(cursor) -> int:
 
 
 def _make_room_for_order(cursor, release_order: int) -> None:
-    """Shift movies at or after an order down one position safely."""
     cursor.execute(
         "UPDATE movies SET release_order = release_order + ? WHERE release_order >= ?",
         (ORDER_OFFSET, release_order),
@@ -98,7 +96,6 @@ def _make_room_for_order(cursor, release_order: int) -> None:
 
 
 def _move_movie(cursor, movie_id: int, old_order: int, new_order: int) -> None:
-    """Move one movie and close the resulting watch-order gap."""
     if old_order == new_order:
         return
 
@@ -174,8 +171,8 @@ def add_movie(
     universe: str,
     is_core_mcu: bool,
     is_doomsday_relevant: bool,
-    doomsday_priority: str,
     notes: str,
+    doomsday_priority: str = "Recommended",
 ) -> None:
     """Add a movie to the catalog as an administrator."""
     clean_title = title.strip()
@@ -234,8 +231,8 @@ def update_movie(
     universe: str,
     is_core_mcu: bool,
     is_doomsday_relevant: bool,
-    doomsday_priority: str,
     notes: str,
+    doomsday_priority: str = "Recommended",
 ) -> None:
     """Update an existing movie as an administrator."""
     clean_title = title.strip()
@@ -289,7 +286,6 @@ def update_movie(
 
 
 def set_movie_active(admin_user_id: int, movie_id: int, is_active: bool) -> None:
-    """Activate or deactivate a catalog movie without deleting watch history."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
