@@ -1,4 +1,4 @@
-"""Database schema creation and initial movie seeding."""
+"""Database schema creation, validation, and initial movie seeding."""
 
 from data.movies import MOVIES
 from database.connection import get_connection
@@ -27,6 +27,7 @@ SCHEMA_STATEMENTS = (
         universe TEXT NOT NULL DEFAULT 'Marvel Cinematic Universe',
         is_core_mcu INTEGER NOT NULL DEFAULT 1,
         is_doomsday_relevant INTEGER NOT NULL DEFAULT 1,
+        doomsday_priority TEXT NOT NULL DEFAULT 'Essential',
         is_active INTEGER NOT NULL DEFAULT 1,
         notes TEXT
     )
@@ -53,9 +54,14 @@ MOVIE_COLUMNS = {
     "universe": "TEXT NOT NULL DEFAULT 'Marvel Cinematic Universe'",
     "is_core_mcu": "INTEGER NOT NULL DEFAULT 1",
     "is_doomsday_relevant": "INTEGER NOT NULL DEFAULT 1",
+    "doomsday_priority": "TEXT NOT NULL DEFAULT 'Essential'",
     "is_active": "INTEGER NOT NULL DEFAULT 1",
     "notes": "TEXT",
 }
+
+
+class DatabaseSchemaError(RuntimeError):
+    """Raised when the deployed database schema is behind the application."""
 
 
 def create_schema() -> None:
@@ -71,7 +77,7 @@ def create_schema() -> None:
 
 
 def migrate_movie_schema() -> None:
-    """Add newer catalog fields to an existing movies table safely."""
+    """Add newer catalog fields using a credential that permits DDL."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
@@ -84,6 +90,31 @@ def migrate_movie_schema() -> None:
                     f"ALTER TABLE movies ADD COLUMN {column_name} {definition}"
                 )
         connection.commit()
+    finally:
+        connection.close()
+
+
+def validate_schema() -> None:
+    """Validate required movie fields without attempting schema changes."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA table_info(movies)")
+        existing_columns = {str(row[1]) for row in cursor.fetchall()}
+        required_columns = {
+            "id",
+            "title",
+            "release_year",
+            "phase",
+            "release_order",
+            *MOVIE_COLUMNS.keys(),
+        }
+        missing = sorted(required_columns - existing_columns)
+        if missing:
+            raise DatabaseSchemaError(
+                "The database needs a one-time schema update. Missing movie "
+                "columns: " + ", ".join(missing)
+            )
     finally:
         connection.close()
 
@@ -106,9 +137,13 @@ def seed_movies() -> None:
                     universe,
                     is_core_mcu,
                     is_doomsday_relevant,
+                    doomsday_priority,
                     is_active
                 )
-                VALUES (?, ?, ?, ?, ?, 'MCU', 'Marvel Cinematic Universe', 1, 1, 1)
+                VALUES (
+                    ?, ?, ?, ?, ?, 'MCU', 'Marvel Cinematic Universe',
+                    1, 1, 'Essential', 1
+                )
                 """,
                 (
                     release_order,
@@ -124,7 +159,7 @@ def seed_movies() -> None:
 
 
 def initialize_database() -> None:
-    """Create, migrate, and seed all application data."""
+    """Create, migrate, and seed application data for setup/admin use."""
     create_schema()
     migrate_movie_schema()
     seed_movies()
