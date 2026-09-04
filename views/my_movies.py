@@ -8,6 +8,8 @@ from database.user_movies import (
     set_movie_watched,
 )
 
+WATCH_PATHS = ["Essential", "Recommended", "Completionist"]
+
 
 def _phase_label(phase: int) -> str:
     return "Supplemental" if int(phase) == 0 else f"Phase {phase}"
@@ -15,14 +17,6 @@ def _phase_label(phase: int) -> str:
 
 def render_my_movies(user_id: int) -> None:
     """Render the logged-in user's editable movie checklist."""
-    movies = list(get_active_movies())
-    statuses = get_user_movie_statuses(user_id)
-    watched_count = sum(
-        1 for movie_id, *_ in movies if statuses.get(int(movie_id), False)
-    )
-    total_movies = len(movies)
-    progress = watched_count / total_movies if total_movies else 0.0
-
     st.markdown(
         """
         <section class="hero">
@@ -36,6 +30,26 @@ def render_my_movies(user_id: int) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    watch_mode = st.segmented_control(
+        "Watch path",
+        options=WATCH_PATHS,
+        default="Recommended",
+        key="my_movies_watch_mode",
+        help=(
+            "Essential shows only must-watch titles. Recommended adds useful "
+            "context. Completionist includes every active movie."
+        ),
+    )
+    movies = list(get_active_movies(watch_mode or "Recommended"))
+    statuses = get_user_movie_statuses(user_id)
+    watched_count = sum(
+        1 for movie_id, *_ in movies if statuses.get(int(movie_id), False)
+    )
+    total_movies = len(movies)
+    progress = watched_count / total_movies if total_movies else 0.0
+
+    st.caption(f"Current path: **{watch_mode or 'Recommended'}** · {total_movies} movies")
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Watched", watched_count)
