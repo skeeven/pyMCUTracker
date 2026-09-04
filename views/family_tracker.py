@@ -6,6 +6,8 @@ from database.movies import get_active_movies
 from database.user_movies import get_family_movie_statuses, set_movie_watched
 from database.users import get_active_users
 
+WATCH_PATHS = ["Essential", "Recommended", "Completionist"]
+
 
 def _phase_label(phase: int) -> str:
     return "Supplemental" if int(phase) == 0 else f"Phase {phase}"
@@ -59,7 +61,6 @@ def _render_compact_movie(current_user_id, users, statuses, movie) -> None:
 def render_family_tracker(current_user_id: int) -> None:
     """Render the shared matrix with only the current user's column editable."""
     users = list(get_active_users())
-    movies = list(get_active_movies())
     statuses = get_family_movie_statuses()
 
     st.markdown(
@@ -76,6 +77,19 @@ def render_family_tracker(current_user_id: int) -> None:
     if not users:
         st.info("No active family accounts have been created yet.")
         return
+
+    watch_mode = st.segmented_control(
+        "Watch path",
+        options=WATCH_PATHS,
+        default="Recommended",
+        key="family_watch_mode",
+        help=(
+            "Essential shows only must-watch titles. Recommended adds useful "
+            "context. Completionist includes every active movie."
+        ),
+    )
+    movies = list(get_active_movies(watch_mode or "Recommended"))
+    st.caption(f"Current path: **{watch_mode or 'Recommended'}** · {len(movies)} movies")
 
     metric_columns = st.columns(min(len(users), 4))
     for index, user in enumerate(users):
