@@ -1,26 +1,25 @@
-"""One-time/idempotent loader for Mutant Legacy Doomsday supplemental movies."""
+"""Idempotent loader for Mutant Legacy Doomsday supplemental movies."""
 
 from database.connection import get_connection
 
 SUPPLEMENTAL_MOVIES = [
-    ("X-Men", 2000, "Mutant Legacy", "Fox X-Men Universe"),
-    ("X2: X-Men United", 2003, "Mutant Legacy", "Fox X-Men Universe"),
-    ("X-Men: The Last Stand", 2006, "Mutant Legacy", "Fox X-Men Universe"),
-    ("X-Men Origins: Wolverine", 2009, "Mutant Legacy", "Fox X-Men Universe"),
-    ("X-Men: First Class", 2011, "Mutant Legacy", "Fox X-Men Universe"),
-    ("The Wolverine", 2013, "Mutant Legacy", "Fox X-Men Universe"),
-    ("X-Men: Days of Future Past", 2014, "Mutant Legacy", "Fox X-Men Universe"),
-    ("Deadpool", 2016, "Mutant Legacy", "Fox X-Men Universe"),
-    ("X-Men: Apocalypse", 2016, "Mutant Legacy", "Fox X-Men Universe"),
-    ("Logan", 2017, "Mutant Legacy", "Fox X-Men Universe"),
-    ("Deadpool 2", 2018, "Mutant Legacy", "Fox X-Men Universe"),
-    ("Dark Phoenix", 2019, "Mutant Legacy", "Fox X-Men Universe"),
-    ("The New Mutants", 2020, "Mutant Legacy", "Fox X-Men Universe"),
+    ("X-Men", 2000, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("X2: X-Men United", 2003, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("X-Men: The Last Stand", 2006, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("X-Men Origins: Wolverine", 2009, "Mutant Legacy", "Fox X-Men Universe", "Optional"),
+    ("X-Men: First Class", 2011, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("The Wolverine", 2013, "Mutant Legacy", "Fox X-Men Universe", "Recommended"),
+    ("X-Men: Days of Future Past", 2014, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("Deadpool", 2016, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("X-Men: Apocalypse", 2016, "Mutant Legacy", "Fox X-Men Universe", "Recommended"),
+    ("Logan", 2017, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("Deadpool 2", 2018, "Mutant Legacy", "Fox X-Men Universe", "Essential"),
+    ("Dark Phoenix", 2019, "Mutant Legacy", "Fox X-Men Universe", "Recommended"),
+    ("The New Mutants", 2020, "Mutant Legacy", "Fox X-Men Universe", "Optional"),
 ]
 
 
 def _validate_movie_schema(cursor) -> None:
-    """Ensure the movie catalog migration has been applied before loading."""
     cursor.execute("PRAGMA table_info(movies)")
     columns = {str(row[1]) for row in cursor.fetchall()}
     required = {
@@ -34,6 +33,7 @@ def _validate_movie_schema(cursor) -> None:
         "universe",
         "is_core_mcu",
         "is_doomsday_relevant",
+        "doomsday_priority",
         "is_active",
         "notes",
     }
@@ -47,12 +47,7 @@ def _validate_movie_schema(cursor) -> None:
 
 
 def seed_supplemental_movies() -> tuple[int, int]:
-    """Insert/update Mutant Legacy movies and place them first in watch order.
-
-    The loader is safe to run repeatedly. Existing movie rows are reused by title,
-    new rows receive IDs above the current maximum, and all non-supplemental
-    movies retain their relative order after the supplemental block.
-    """
+    """Insert/update Mutant Legacy movies and preserve a stable watch order."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
@@ -82,11 +77,9 @@ def seed_supplemental_movies() -> tuple[int, int]:
         updated = 0
         supplemental_ids = []
 
-        # Move all existing order values out of the way before resequencing so
-        # the UNIQUE constraint on release_order cannot collide mid-update.
         cursor.execute("UPDATE movies SET release_order = release_order + 10000")
 
-        for title, release_year, category, universe in SUPPLEMENTAL_MOVIES:
+        for title, release_year, category, universe, priority in SUPPLEMENTAL_MOVIES:
             movie_id = existing_by_title.get(title)
             if movie_id is None:
                 movie_id = next_id
@@ -104,10 +97,11 @@ def seed_supplemental_movies() -> tuple[int, int]:
                         universe,
                         is_core_mcu,
                         is_doomsday_relevant,
+                        doomsday_priority,
                         is_active,
                         notes
                     )
-                    VALUES (?, ?, ?, 0, ?, NULL, ?, ?, 0, 1, 1, ?)
+                    VALUES (?, ?, ?, 0, ?, NULL, ?, ?, 0, 1, ?, 1, ?)
                     """,
                     (
                         movie_id,
@@ -116,6 +110,7 @@ def seed_supplemental_movies() -> tuple[int, int]:
                         20000 + movie_id,
                         category,
                         universe,
+                        priority,
                         "Supplemental legacy title for the Road to Doomsday.",
                     ),
                 )
@@ -130,6 +125,7 @@ def seed_supplemental_movies() -> tuple[int, int]:
                         universe = ?,
                         is_core_mcu = 0,
                         is_doomsday_relevant = 1,
+                        doomsday_priority = ?,
                         is_active = 1,
                         notes = COALESCE(
                             NULLIF(notes, ''),
@@ -141,6 +137,7 @@ def seed_supplemental_movies() -> tuple[int, int]:
                         release_year,
                         category,
                         universe,
+                        priority,
                         movie_id,
                     ),
                 )
