@@ -2,7 +2,12 @@
 
 import streamlit as st
 
-from auth.service import authenticate_user, register_user
+from auth.service import (
+    authenticate_user,
+    invite_code_required,
+    register_user,
+)
+from database.users import get_user_by_id
 
 
 def initialize_auth_state() -> None:
@@ -40,6 +45,21 @@ def logout() -> None:
     st.session_state.is_admin = False
 
 
+def refresh_authenticated_user() -> bool:
+    """Refresh the logged-in account from the database and enforce activity."""
+    user_id = st.session_state.get("user_id")
+    if user_id is None:
+        return False
+
+    user = get_user_by_id(int(user_id))
+    if user is None or not bool(user[4]):
+        logout()
+        return False
+
+    set_authenticated_user(user)
+    return True
+
+
 def render_login_form() -> None:
     """Render the login form."""
     with st.form("login_form"):
@@ -66,12 +86,14 @@ def render_login_form() -> None:
     with st.expander("Forgot password?"):
         st.write(
             "Ask your family administrator to reset your password from "
-            "**Manage Family**. Your movie progress will not be affected."
+            "**Administration → Family**. Your movie progress will not be affected."
         )
 
 
 def render_signup_form() -> None:
     """Render the account creation form."""
+    requires_invite = invite_code_required()
+
     with st.form("signup_form"):
         name = st.text_input("Display name")
         email = st.text_input("Email", autocomplete="email")
@@ -85,6 +107,14 @@ def render_signup_form() -> None:
             type="password",
             autocomplete="new-password",
         )
+        invite_code = ""
+        if requires_invite:
+            invite_code = st.text_input(
+                "Family invite code",
+                type="password",
+                help="Ask your family administrator for the private signup code.",
+            )
+
         submitted = st.form_submit_button(
             "Create Account",
             use_container_width=True,
@@ -96,6 +126,7 @@ def render_signup_form() -> None:
             email,
             password,
             confirm_password,
+            invite_code,
         )
         if errors:
             for error in errors:
