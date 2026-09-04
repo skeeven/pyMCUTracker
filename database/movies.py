@@ -3,20 +3,32 @@
 from database.connection import get_connection
 
 ORDER_OFFSET = 100000
+PRIORITY_OPTIONS = ("Essential", "Recommended", "Optional")
 
 
-def get_active_movies() -> list[tuple]:
+def get_active_movies(watch_mode: str = "Completionist") -> list[tuple]:
     """Return active movies in watch order using the legacy four-field shape."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
+        where_clause = "WHERE is_active = 1"
+        parameters: tuple = ()
+
+        if watch_mode == "Essential":
+            where_clause += " AND doomsday_priority = ?"
+            parameters = ("Essential",)
+        elif watch_mode == "Recommended":
+            where_clause += " AND doomsday_priority IN (?, ?)"
+            parameters = ("Essential", "Recommended")
+
         cursor.execute(
-            """
+            f"""
             SELECT id, title, release_year, phase
             FROM movies
-            WHERE is_active = 1
+            {where_clause}
             ORDER BY release_order, id
-            """
+            """,
+            parameters,
         )
         return cursor.fetchall()
     finally:
@@ -41,6 +53,7 @@ def get_all_movies() -> list[tuple]:
                 universe,
                 is_core_mcu,
                 is_doomsday_relevant,
+                doomsday_priority,
                 is_active,
                 notes
             FROM movies
@@ -143,6 +156,13 @@ def _move_movie(cursor, movie_id: int, old_order: int, new_order: int) -> None:
     )
 
 
+def _validate_priority(priority: str) -> str:
+    clean_priority = priority.strip().title()
+    if clean_priority not in PRIORITY_OPTIONS:
+        raise ValueError("Priority must be Essential, Recommended, or Optional.")
+    return clean_priority
+
+
 def add_movie(
     admin_user_id: int,
     title: str,
@@ -154,6 +174,7 @@ def add_movie(
     universe: str,
     is_core_mcu: bool,
     is_doomsday_relevant: bool,
+    doomsday_priority: str,
     notes: str,
 ) -> None:
     """Add a movie to the catalog as an administrator."""
@@ -164,6 +185,7 @@ def add_movie(
         raise ValueError("Watch order must be at least 1.")
     if phase < 0 or phase > 6:
         raise ValueError("Phase must be between 0 and 6.")
+    priority = _validate_priority(doomsday_priority)
 
     connection = get_connection()
     try:
@@ -176,9 +198,9 @@ def add_movie(
             INSERT INTO movies (
                 id, title, release_year, release_date, phase, release_order,
                 category, universe, is_core_mcu, is_doomsday_relevant,
-                is_active, notes
+                doomsday_priority, is_active, notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
             (
                 movie_id,
@@ -191,6 +213,7 @@ def add_movie(
                 universe.strip() or "Marvel Cinematic Universe",
                 int(is_core_mcu),
                 int(is_doomsday_relevant),
+                priority,
                 notes.strip(),
             ),
         )
@@ -211,6 +234,7 @@ def update_movie(
     universe: str,
     is_core_mcu: bool,
     is_doomsday_relevant: bool,
+    doomsday_priority: str,
     notes: str,
 ) -> None:
     """Update an existing movie as an administrator."""
@@ -221,6 +245,7 @@ def update_movie(
         raise ValueError("Watch order must be at least 1.")
     if phase < 0 or phase > 6:
         raise ValueError("Phase must be between 0 and 6.")
+    priority = _validate_priority(doomsday_priority)
 
     connection = get_connection()
     try:
@@ -241,7 +266,7 @@ def update_movie(
             UPDATE movies
             SET title = ?, release_year = ?, release_date = ?, phase = ?,
                 category = ?, universe = ?, is_core_mcu = ?,
-                is_doomsday_relevant = ?, notes = ?
+                is_doomsday_relevant = ?, doomsday_priority = ?, notes = ?
             WHERE id = ?
             """,
             (
@@ -253,6 +278,7 @@ def update_movie(
                 universe.strip() or "Marvel Cinematic Universe",
                 int(is_core_mcu),
                 int(is_doomsday_relevant),
+                priority,
                 notes.strip(),
                 movie_id,
             ),
