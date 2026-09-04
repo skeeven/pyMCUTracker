@@ -1,5 +1,7 @@
 """Browse and filter the Road to Doomsday movie catalog."""
 
+from html import escape
+
 import streamlit as st
 
 from database.movies import get_all_movies
@@ -70,24 +72,32 @@ def render_movie_library() -> None:
             _is_active,
             notes,
         ) = movie
+
         year_text = str(release_year) if release_year else "TBA"
         section_text = "Supplemental" if int(phase) == 0 else f"Phase {phase}"
-        tags = [category, universe, section_text]
+        tags = [str(category), str(universe), section_text]
         if bool(is_core_mcu):
             tags.append("Core MCU")
         if bool(is_doomsday_relevant):
             tags.append("Doomsday Relevant")
 
-        st.markdown(
-            f"""
-            <div class="library-card">
-                <div class="library-order">#{int(watch_order):02d}</div>
-                <div class="library-details">
-                    <div class="library-title">{title}</div>
-                    <div class="library-meta">{year_text} &nbsp;·&nbsp; {' · '.join(tags)}</div>
-                    {f'<div class="library-meta">{notes}</div>' if notes else ''}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        title_html = escape(str(title))
+        meta_html = escape(f"{year_text} · {' · '.join(tags)}")
+        notes_html = (
+            f'<div class="library-meta">{escape(str(notes))}</div>'
+            if notes
+            else ""
         )
+
+        card_html = (
+            '<div class="library-card">'
+            f'<div class="library-order">#{int(watch_order):02d}</div>'
+            '<div class="library-details">'
+            f'<div class="library-title">{title_html}</div>'
+            f'<div class="library-meta">{meta_html}</div>'
+            f'{notes_html}'
+            '</div>'
+            '</div>'
+        )
+
+        st.markdown(card_html, unsafe_allow_html=True)
