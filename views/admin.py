@@ -4,6 +4,7 @@ import streamlit as st
 
 from auth.service import reset_user_password_as_admin
 from database.movies import (
+    PRIORITY_OPTIONS,
     add_movie,
     get_all_movies,
     set_movie_active,
@@ -127,7 +128,7 @@ def _render_add_movie(current_user_id: int, next_order: int) -> None:
             release_date = col2.text_input("Release date", placeholder="YYYY-MM-DD")
             phase = col3.number_input("MCU phase", min_value=0, max_value=6, value=0)
 
-            col4, col5 = st.columns(2)
+            col4, col5, col6 = st.columns(3)
             watch_order = col4.number_input(
                 "Watch order",
                 min_value=1,
@@ -135,6 +136,11 @@ def _render_add_movie(current_user_id: int, next_order: int) -> None:
                 step=1,
             )
             category = col5.selectbox("Category", CATEGORY_OPTIONS)
+            priority = col6.selectbox(
+                "Doomsday priority",
+                list(PRIORITY_OPTIONS),
+                index=list(PRIORITY_OPTIONS).index("Recommended"),
+            )
 
             universe = st.text_input(
                 "Universe / continuity",
@@ -164,6 +170,7 @@ def _render_add_movie(current_user_id: int, next_order: int) -> None:
                     is_core_mcu,
                     is_doomsday_relevant,
                     notes,
+                    priority,
                 )
                 st.success(f"Added {title.strip()} to the Road to Doomsday catalog.")
                 st.rerun()
@@ -180,7 +187,7 @@ def _render_add_movie(current_user_id: int, next_order: int) -> None:
 def _render_movie_management(current_user_id: int) -> None:
     """Render catalog creation, editing, ordering, and activation controls."""
     movies = list(get_all_movies())
-    active_count = sum(1 for movie in movies if bool(movie[10]))
+    active_count = sum(1 for movie in movies if bool(movie[11]))
     next_order = max((int(movie[5]) for movie in movies), default=0) + 1
 
     col1, col2, col3 = st.columns(3)
@@ -189,13 +196,13 @@ def _render_movie_management(current_user_id: int) -> None:
     col3.metric("Inactive", len(movies) - active_count)
 
     st.caption(
-        "Use Phase 0 for supplemental/non-MCU titles. Deactivating a movie hides "
-        "it from trackers but preserves everyone's watch history."
+        "Use Phase 0 for supplemental/non-MCU titles. Priority controls whether "
+        "a movie appears in Essential, Recommended, or Completionist watch paths."
     )
     _render_add_movie(current_user_id, next_order)
 
     show_inactive = st.toggle("Show inactive movies", value=False)
-    visible_movies = [movie for movie in movies if show_inactive or bool(movie[10])]
+    visible_movies = [movie for movie in movies if show_inactive or bool(movie[11])]
 
     for movie in visible_movies:
         (
@@ -209,13 +216,17 @@ def _render_movie_management(current_user_id: int) -> None:
             universe,
             is_core_mcu,
             is_doomsday_relevant,
+            doomsday_priority,
             is_active,
             notes,
         ) = movie
         movie_id = int(movie_id)
         status = "Active" if bool(is_active) else "Inactive"
+        priority_text = str(doomsday_priority or "Recommended")
 
-        with st.expander(f"#{int(watch_order):02d} · {title} · {status}"):
+        with st.expander(
+            f"#{int(watch_order):02d} · {title} · {priority_text} · {status}"
+        ):
             with st.form(f"admin_edit_movie_{movie_id}"):
                 edit_title = st.text_input(
                     "Title",
@@ -240,7 +251,8 @@ def _render_movie_management(current_user_id: int) -> None:
                     value=int(phase),
                     key=f"movie_phase_{movie_id}",
                 )
-                col4, col5 = st.columns(2)
+
+                col4, col5, col6 = st.columns(3)
                 edit_order = col4.number_input(
                     "Watch order",
                     min_value=1,
@@ -257,6 +269,17 @@ def _render_movie_management(current_user_id: int) -> None:
                     index=category_values.index(str(category)),
                     key=f"movie_category_{movie_id}",
                 )
+
+                priority_values = list(PRIORITY_OPTIONS)
+                if priority_text not in priority_values:
+                    priority_values.append(priority_text)
+                edit_priority = col6.selectbox(
+                    "Doomsday priority",
+                    priority_values,
+                    index=priority_values.index(priority_text),
+                    key=f"movie_priority_{movie_id}",
+                )
+
                 edit_universe = st.text_input(
                     "Universe / continuity",
                     value=str(universe),
@@ -296,6 +319,7 @@ def _render_movie_management(current_user_id: int) -> None:
                         edit_core,
                         edit_relevant,
                         edit_notes,
+                        edit_priority,
                     )
                     st.rerun()
                 except ValueError as exc:
