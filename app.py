@@ -7,8 +7,8 @@ import streamlit as st
 from auth.ui import initialize_auth_state, is_logged_in, logout, render_auth_page
 from database.connection import DatabaseConnectionError
 from database.movies import get_active_movies
-from database.schema import initialize_database
-from database.user_movies import get_family_movie_statuses, get_watched_count
+from database.schema import DatabaseSchemaError, validate_schema
+from database.user_movies import get_family_movie_statuses
 from database.users import get_active_users
 from services.recommendations import (
     get_missing_member_names,
@@ -26,17 +26,15 @@ DOOMSDAY_DATE = date(2026, 12, 18)
 
 @st.cache_resource
 def prepare_database() -> None:
-    """Create and migrate the database once per application process."""
-    initialize_database()
+    """Validate the database once per application process without running DDL."""
+    validate_schema()
 
 
 def days_until_doomsday() -> int:
-    """Return the number of days remaining until Avengers: Doomsday."""
     return max((DOOMSDAY_DATE - date.today()).days, 0)
 
 
 def get_member_watched_count(user_id: int, statuses, movies) -> int:
-    """Return watched count for one family member from family status data."""
     return sum(
         1
         for movie_id, *_ in movies
@@ -45,7 +43,6 @@ def get_member_watched_count(user_id: int, statuses, movies) -> int:
 
 
 def get_family_complete_count(users: list[tuple], statuses, movies) -> int:
-    """Return number of active movies watched by every active family member."""
     if not users:
         return 0
 
@@ -58,7 +55,6 @@ def get_family_complete_count(users: list[tuple], statuses, movies) -> int:
 
 
 def get_phase_family_progress(phase: int, users, statuses, movies) -> tuple[int, int]:
-    """Return family-complete movies and total movies for one section."""
     phase_movies = [movie for movie in movies if int(movie[3]) == int(phase)]
     if not users:
         return 0, len(phase_movies)
@@ -73,7 +69,6 @@ def get_phase_family_progress(phase: int, users, statuses, movies) -> tuple[int,
 
 
 def render_phase_progress(users, statuses, movies) -> None:
-    """Render family completion cards for all catalog sections."""
     phases = sorted({int(movie[3]) for movie in movies})
     st.subheader("Family progress by section")
     phase_columns = st.columns(3)
@@ -99,18 +94,8 @@ def render_phase_progress(users, statuses, movies) -> None:
 
 
 def render_dashboard() -> None:
-    """Render the authenticated dashboard."""
     users = list(get_active_users())
-    movies = list(get_active_movies())
     statuses = get_family_movie_statuses()
-
-    watched_count = get_watched_count(st.session_state.user_id)
-    total_movies = len(movies)
-    progress = watched_count / total_movies if total_movies else 0.0
-    family_complete = get_family_complete_count(users, statuses, movies)
-    family_progress = family_complete / total_movies if total_movies else 0.0
-    next_movie = get_next_family_movie(users, statuses, movies)
-    tonight_pick = get_tonight_recommendation(users, statuses, movies=movies)
 
     st.markdown(
         """
@@ -125,6 +110,32 @@ def render_dashboard() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    watch_mode = st.segmented_control(
+        "Watch path",
+        options=["Essential", "Recommended", "Completionist"],
+        default="Recommended",
+        key="dashboard_watch_mode",
+        help=(
+            "Essential shows only must-watch titles. Recommended adds useful "
+            "context. Completionist includes every active movie."
+        ),
+    )
+    movies = list(get_active_movies(watch_mode or "Recommended"))
+
+    watched_count = get_member_watched_count(
+        int(st.session_state.user_id),
+        statuses,
+        movies,
+    )
+    total_movies = len(movies)
+    progress = watched_count / total_movies if total_movies else 0.0
+    family_complete = get_family_complete_count(users, statuses, movies)
+    family_progress = family_complete / total_movies if total_movies else 0.0
+    next_movie = get_next_family_movie(users, statuses, movies)
+    tonight_pick = get_tonight_recommendation(users, statuses, movies=movies)
+
+    st.caption(f"Current path: **{watch_mode or 'Recommended'}** · {total_movies} movies")
 
     col1, col2, col3, col4 = st.columns(4)
     metrics = (
@@ -149,11 +160,11 @@ def render_dashboard() -> None:
     with progress_col:
         st.subheader("Your mission progress")
         st.progress(progress)
-        st.caption(f"{progress:.0%} of your personal watchlist complete")
+        st.caption(f"{progress:.0%} of this watch path complete")
     with family_col:
         st.subheader("Family mission progress")
         st.progress(family_progress)
-        st.caption(f"{family_progress:.0%} of the catalog has been watched by everyone")
+        st.caption(f"{family_progress:.0%} of this path watched by everyone")
 
     render_phase_progress(users, statuses, movies)
 
@@ -187,14 +198,14 @@ def render_dashboard() -> None:
                     <div class="recommendation-meta">{section} · {year_text}</div>
                     <div class="recommendation-detail">
                         <strong>Still needs it:</strong> {missing_text}<br>
-                        Earliest watch-order title not yet complete for the family.
+                        Earliest title in the selected watch path not yet complete.
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         elif total_movies:
-            st.success("Everyone has completed the full family watchlist!")
+            st.success("Everyone has completed this watch path!")
 
     with tonight_col:
         st.subheader("What Should We Watch Tonight?")
@@ -211,14 +222,14 @@ def render_dashboard() -> None:
                     <div class="recommendation-meta">{section} · {release_year}</div>
                     <div class="recommendation-detail">
                         <strong>Helps {len(missing_names)}:</strong> {missing_text}<br>
-                        Chosen to make the biggest shared progress tonight.
+                        Chosen to make the biggest shared progress in this path.
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         else:
-            st.success("No released movie in the catalog is still needed.")
+            st.success("No released movie in this path is still needed.")
 
     st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
@@ -228,7 +239,6 @@ def render_dashboard() -> None:
 
 
 def render_sidebar() -> str:
-    """Render navigation and return the selected page."""
     with st.sidebar:
         st.title("Road to Doomsday")
         st.caption("Family Marvel Watch Tracker")
@@ -260,7 +270,6 @@ def render_sidebar() -> str:
 
 
 def render_selected_page(page: str) -> None:
-    """Render the page selected in the authenticated sidebar."""
     if page == "🏠 Dashboard":
         render_dashboard()
     elif page == "🎞️ My Movies":
@@ -273,17 +282,15 @@ def render_selected_page(page: str) -> None:
         render_admin_page(st.session_state.user_id)
 
 
-def render_database_error(error: DatabaseConnectionError) -> None:
-    """Show a friendly message when SQLiteCloud cannot be reached."""
+def render_database_error(error: Exception) -> None:
     st.error(str(error))
     st.info(
         "Your saved watch data has not been changed. Check the database "
-        "configuration or try refreshing the app in a moment."
+        "configuration or apply the required one-time schema update."
     )
 
 
 def main() -> None:
-    """Configure and run the Streamlit application."""
     st.set_page_config(
         page_title="Road to Doomsday",
         page_icon="🎬",
@@ -301,7 +308,7 @@ def main() -> None:
 
         page = render_sidebar()
         render_selected_page(page)
-    except DatabaseConnectionError as error:
+    except (DatabaseConnectionError, DatabaseSchemaError) as error:
         render_database_error(error)
 
 
