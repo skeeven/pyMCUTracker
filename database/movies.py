@@ -36,26 +36,36 @@ def get_active_movies(watch_mode: str = "Completionist") -> list[tuple]:
 
 
 def get_all_movies() -> list[tuple]:
-    """Return the full movie catalog with administrative metadata."""
+    """Return admin metadata using the original twelve-field shape."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
         cursor.execute(
             """
             SELECT
-                id,
-                title,
-                release_year,
-                release_date,
-                phase,
-                release_order,
-                category,
-                universe,
-                is_core_mcu,
-                is_doomsday_relevant,
-                doomsday_priority,
-                is_active,
-                notes
+                id, title, release_year, release_date, phase, release_order,
+                category, universe, is_core_mcu, is_doomsday_relevant,
+                is_active, notes
+            FROM movies
+            ORDER BY release_order, id
+            """
+        )
+        return cursor.fetchall()
+    finally:
+        connection.close()
+
+
+def get_all_movies_with_priority() -> list[tuple]:
+    """Return full administrative metadata including Doomsday priority."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            SELECT
+                id, title, release_year, release_date, phase, release_order,
+                category, universe, is_core_mcu, is_doomsday_relevant,
+                doomsday_priority, is_active, notes
             FROM movies
             ORDER BY release_order, id
             """
@@ -232,9 +242,9 @@ def update_movie(
     is_core_mcu: bool,
     is_doomsday_relevant: bool,
     notes: str,
-    doomsday_priority: str = "Recommended",
+    doomsday_priority: str | None = None,
 ) -> None:
-    """Update an existing movie as an administrator."""
+    """Update a movie while preserving priority unless explicitly supplied."""
     clean_title = title.strip()
     if not clean_title:
         raise ValueError("Movie title is required.")
@@ -242,14 +252,13 @@ def update_movie(
         raise ValueError("Watch order must be at least 1.")
     if phase < 0 or phase > 6:
         raise ValueError("Phase must be between 0 and 6.")
-    priority = _validate_priority(doomsday_priority)
 
     connection = get_connection()
     try:
         cursor = connection.cursor()
         _require_admin(cursor, admin_user_id)
         cursor.execute(
-            "SELECT release_order FROM movies WHERE id = ?",
+            "SELECT release_order, doomsday_priority FROM movies WHERE id = ?",
             (movie_id,),
         )
         row = cursor.fetchone()
@@ -257,6 +266,11 @@ def update_movie(
             raise ValueError("Movie was not found.")
 
         old_order = int(row[0])
+        priority = (
+            _validate_priority(doomsday_priority)
+            if doomsday_priority is not None
+            else str(row[1])
+        )
         _move_movie(cursor, movie_id, old_order, release_order)
         cursor.execute(
             """
@@ -279,6 +293,26 @@ def update_movie(
                 notes.strip(),
                 movie_id,
             ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def set_movie_priority(
+    admin_user_id: int,
+    movie_id: int,
+    doomsday_priority: str,
+) -> None:
+    """Update only a movie's Doomsday priority."""
+    priority = _validate_priority(doomsday_priority)
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        _require_admin(cursor, admin_user_id)
+        cursor.execute(
+            "UPDATE movies SET doomsday_priority = ? WHERE id = ?",
+            (priority, movie_id),
         )
         connection.commit()
     finally:
