@@ -18,6 +18,64 @@ SUPPLEMENTAL_MOVIES = [
     ("The New Mutants", 2020, "Mutant Legacy", "Fox X-Men Universe", "Optional"),
 ]
 
+# Combined theatrical release order. This preserves the original audience journey
+# while interleaving the Fox/X-Men legacy films with the MCU catalog.
+MASTER_WATCH_ORDER = [
+    "X-Men",
+    "X2: X-Men United",
+    "X-Men: The Last Stand",
+    "Iron Man",
+    "The Incredible Hulk",
+    "X-Men Origins: Wolverine",
+    "Iron Man 2",
+    "Thor",
+    "X-Men: First Class",
+    "Captain America: The First Avenger",
+    "The Avengers",
+    "Iron Man 3",
+    "The Wolverine",
+    "Thor: The Dark World",
+    "Captain America: The Winter Soldier",
+    "X-Men: Days of Future Past",
+    "Guardians of the Galaxy",
+    "Avengers: Age of Ultron",
+    "Ant-Man",
+    "Deadpool",
+    "Captain America: Civil War",
+    "X-Men: Apocalypse",
+    "Doctor Strange",
+    "Logan",
+    "Guardians of the Galaxy Vol. 2",
+    "Spider-Man: Homecoming",
+    "Thor: Ragnarok",
+    "Black Panther",
+    "Avengers: Infinity War",
+    "Deadpool 2",
+    "Ant-Man and the Wasp",
+    "Captain Marvel",
+    "Avengers: Endgame",
+    "Dark Phoenix",
+    "Spider-Man: Far From Home",
+    "The New Mutants",
+    "Black Widow",
+    "Shang-Chi and the Legend of the Ten Rings",
+    "Eternals",
+    "Spider-Man: No Way Home",
+    "Doctor Strange in the Multiverse of Madness",
+    "Thor: Love and Thunder",
+    "Black Panther: Wakanda Forever",
+    "Ant-Man and the Wasp: Quantumania",
+    "Guardians of the Galaxy Vol. 3",
+    "The Marvels",
+    "Deadpool & Wolverine",
+    "Captain America: Brave New World",
+    "Thunderbolts* / The New Avengers",
+    "The Fantastic Four: First Steps",
+    "Spider-Man: Brand New Day",
+    "Avengers: Doomsday",
+    "Avengers: Secret Wars",
+]
+
 
 def _validate_movie_schema(cursor) -> None:
     cursor.execute("PRAGMA table_info(movies)")
@@ -47,7 +105,7 @@ def _validate_movie_schema(cursor) -> None:
 
 
 def seed_supplemental_movies() -> tuple[int, int]:
-    """Insert/update Mutant Legacy movies and preserve a stable watch order."""
+    """Insert/update Mutant Legacy movies and apply the master watch order."""
     connection = get_connection()
     try:
         cursor = connection.cursor()
@@ -63,20 +121,14 @@ def seed_supplemental_movies() -> tuple[int, int]:
         existing_rows = cursor.fetchall()
         existing_by_title = {str(row[1]): int(row[0]) for row in existing_rows}
 
-        supplemental_titles = {movie[0] for movie in SUPPLEMENTAL_MOVIES}
-        other_movie_ids = [
-            int(row[0])
-            for row in existing_rows
-            if str(row[1]) not in supplemental_titles
-        ]
-
         cursor.execute("SELECT COALESCE(MAX(id), 0) FROM movies")
         next_id = int(cursor.fetchone()[0]) + 1
 
         inserted = 0
         updated = 0
-        supplemental_ids = []
 
+        # Move all current watch-order values out of the way so resequencing
+        # cannot collide with the UNIQUE constraint on release_order.
         cursor.execute("UPDATE movies SET release_order = release_order + 10000")
 
         for title, release_year, category, universe, priority in SUPPLEMENTAL_MOVIES:
@@ -114,6 +166,7 @@ def seed_supplemental_movies() -> tuple[int, int]:
                         "Supplemental legacy title for the Road to Doomsday.",
                     ),
                 )
+                existing_by_title[title] = movie_id
                 inserted += 1
             else:
                 cursor.execute(
@@ -143,9 +196,19 @@ def seed_supplemental_movies() -> tuple[int, int]:
                 )
                 updated += 1
 
-            supplemental_ids.append(movie_id)
+        master_titles = set(MASTER_WATCH_ORDER)
+        master_movie_ids = [
+            existing_by_title[title]
+            for title in MASTER_WATCH_ORDER
+            if title in existing_by_title
+        ]
+        extra_movie_ids = [
+            int(row[0])
+            for row in existing_rows
+            if str(row[1]) not in master_titles
+        ]
 
-        final_order = supplemental_ids + other_movie_ids
+        final_order = master_movie_ids + extra_movie_ids
         for release_order, movie_id in enumerate(final_order, start=1):
             cursor.execute(
                 "UPDATE movies SET release_order = ? WHERE id = ?",
