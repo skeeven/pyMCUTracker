@@ -4,7 +4,7 @@ import streamlit as st
 
 from database.media_metadata import get_metadata_map
 from database.movies import get_all_movies
-from services.tmdb import refresh_library
+from services.tmdb import TMDBError, refresh_library, test_connection
 
 IMAGE_ROOT = "https://image.tmdb.org/t/p/w342"
 
@@ -28,14 +28,78 @@ def render_movie_library() -> None:
         refresh_col, note_col = st.columns([1, 3])
         with refresh_col:
             if st.button("🔄 Refresh Library", use_container_width=True):
-                with st.spinner("Refreshing movie information from TMDB..."):
-                    refreshed, missed = refresh_library()
-                st.success(f"Refreshed {refreshed} titles.")
-                if missed:
-                    st.warning(
-                        "Could not confidently refresh: " + ", ".join(missed)
+                status = st.status("Checking TMDB connection...", expanded=True)
+                progress = st.progress(0.0)
+                current = st.empty()
+
+                def report(index, total, title, stage):
+                    percent = index / total if total else 1.0
+                    progress.progress(percent)
+                    labels = {
+                        "retrieving": "Retrieving",
+                        "saved": "Updated",
+                        "unmatched": "No match for",
+                        "failed": "Error updating",
+                    }
+                    current.write(
+                        f"{labels.get(stage, stage.title())}: "
+                        f"**{title}** ({index}/{total})"
                     )
-                st.rerun()
+
+                try:
+                    message = test_connection()
+                    status.write(f"✅ {message}")
+                    status.write("📡 Retrieving library metadata...")
+                    result = refresh_library(report)
+                    refreshed = int(result["refreshed"])
+                    unmatched = result["unmatched"]
+                    failed = result["failed"]
+                    progress.progress(1.0)
+                    current.empty()
+
+                    status.write(
+                        f"✅ Updated **{refreshed} of {result['total']}** active titles."
+                    )
+                    if unmatched:
+                        status.write(
+                            "⚠️ No TMDB match: " + ", ".join(unmatched)
+                        )
+                    if failed:
+                        status.write(
+                            f"❌ {len(failed)} title(s) failed while saving."
+                        )
+                        for failed_title, error in failed[:10]:
+                            status.write(f"- {failed_title}: {error}")
+                    state = "complete" if not failed else "error"
+                    status.update(
+                        label=(
+                            f"Library refresh finished — {refreshed} titles updated"
+                        ),
+                        state=state,
+                        expanded=bool(unmatched or failed),
+                    )
+                    st.session_state["library_refresh_result"] = result
+                except TMDBError as exc:
+                    progress.empty()
+                    current.empty()
+                    status.write(f"❌ {exc}")
+                    status.update(
+                        label="Unable to refresh library",
+                        state="error",
+                        expanded=True,
+                    )
+                except Exception as exc:
+                    progress.empty()
+                    current.empty()
+                    status.write(
+                        "❌ The refresh stopped because of an application or "
+                        f"database error: {exc}"
+                    )
+                    status.update(
+                        label="Library refresh failed",
+                        state="error",
+                        expanded=True,
+                    )
         with note_col:
             st.caption(
                 "Administrator only · Updates cached ratings, cast, artwork, "
