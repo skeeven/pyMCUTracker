@@ -11,6 +11,11 @@ from database.movies import get_all_movies
 
 API_ROOT = "https://api.themoviedb.org/3"
 
+TV_SEARCH_ALIASES = {
+    "Daredevil (TV Series)": "Daredevil",
+    "The Punisher (TV Series)": "The Punisher",
+}
+
 
 class TMDBError(RuntimeError):
     """Friendly TMDB connectivity/authentication error."""
@@ -157,7 +162,8 @@ def refresh_movie(movie_id: int, title: str, year: int | None) -> bool:
 
 
 def refresh_tv_series(movie_id: int, title: str, year: int | None) -> bool:
-    match = _best_result(title, year, "tv")
+    search_title = TV_SEARCH_ALIASES.get(title, title)
+    match = _best_result(search_title, year, "tv")
     if not match:
         return False
     tmdb_id = int(match["id"])
