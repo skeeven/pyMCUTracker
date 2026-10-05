@@ -11,6 +11,13 @@ from database.movies import (
     update_movie,
 )
 from database.users import get_all_users, set_user_active, update_user_name
+from database.watch_paths import (
+    PRIORITY_HELP,
+    PRIORITY_OPTIONS as PATH_PRIORITY_OPTIONS,
+    get_movie_path_memberships,
+    get_watch_paths,
+    set_movie_path,
+)
 
 CATEGORY_OPTIONS = [
     "MCU",
@@ -196,9 +203,15 @@ def _render_movie_management(current_user_id: int) -> None:
     col3.metric("Inactive", len(movies) - active_count)
 
     st.caption(
-        "Use Phase 0 for supplemental/non-MCU titles. Priority controls whether "
-        "a movie appears in Essential, Recommended, or Completionist watch paths."
+        "Use Phase 0 for supplemental/non-MCU titles. Catalog metadata is separate "
+        "from each movie's membership and priority in a watch path."
     )
+    with st.expander("What do Essential, Recommended, and Optional mean?"):
+        st.markdown(PRIORITY_HELP)
+        st.caption(
+            "These priorities are path-specific: the same movie can be Essential "
+            "in one path and Optional in another."
+        )
     _render_add_movie(current_user_id, next_order)
 
     show_inactive = st.toggle("Show inactive movies", value=False)
@@ -331,6 +344,46 @@ def _render_movie_management(current_user_id: int) -> None:
                     )
                     st.caption(str(exc))
 
+            st.markdown("**Watch path membership**")
+            memberships = get_movie_path_memberships(movie_id)
+            for path_slug, membership in memberships.items():
+                path_id, path_name, path_priority, path_order = membership
+                included = path_priority is not None
+                with st.form(f"path_membership_{movie_id}_{path_id}"):
+                    path_col1, path_col2, path_col3 = st.columns([2, 2, 1])
+                    edit_included = path_col1.checkbox(
+                        f"Include in {path_name}",
+                        value=included,
+                    )
+                    current_priority = (
+                        str(path_priority) if included else "Recommended"
+                    )
+                    edit_path_priority = path_col2.selectbox(
+                        "Priority",
+                        list(PATH_PRIORITY_OPTIONS),
+                        index=list(PATH_PRIORITY_OPTIONS).index(current_priority),
+                    )
+                    edit_path_order = path_col3.number_input(
+                        "Order",
+                        min_value=1,
+                        value=int(path_order) if path_order is not None else 1,
+                        step=1,
+                    )
+                    save_path = st.form_submit_button(f"Save {path_name}")
+                if save_path:
+                    try:
+                        set_movie_path(
+                            current_user_id,
+                            movie_id,
+                            int(path_id),
+                            edit_included,
+                            edit_path_priority,
+                            int(edit_path_order),
+                        )
+                        st.rerun()
+                    except (PermissionError, ValueError) as exc:
+                        st.error(str(exc))
+
             action_label = "Deactivate Movie" if bool(is_active) else "Reactivate Movie"
             if st.button(action_label, key=f"movie_active_{movie_id}"):
                 try:
@@ -351,7 +404,7 @@ def render_admin_page(current_user_id: int) -> None:
         <section class="hero">
             <div class="eyebrow">Initiative Administration</div>
             <h1>Administration</h1>
-            <p>Manage family accounts and the Road to Doomsday movie catalog.</p>
+            <p>Manage family accounts, the Marvel movie catalog, and reusable watch paths.</p>
         </section>
         """,
         unsafe_allow_html=True,
