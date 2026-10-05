@@ -69,19 +69,69 @@ def _get(path: str) -> dict:
         raise TMDBError("TMDB connection timed out.") from exc
 
 
-def _best_result(title: str, year: int | None, media_type: str = "movie") -> dict | None:
+def _normalize_title(value: str) -> str:
+    """Normalize a title for conservative TMDB result matching."""
+    return "".join(character.casefold() for character in value if character.isalnum())
+
+
+def _result_year(result: dict, media_type: str) -> int | None:
+    date_key = "first_air_date" if media_type == "tv" else "release_date"
+    value = str(result.get(date_key) or "")
+    if len(value) >= 4 and value[:4].isdigit():
+        return int(value[:4])
+    return None
+
+
+def _best_result(
+    title: str,
+    year: int | None,
+    media_type: str = "movie",
+) -> dict | None:
     query = quote(title)
     endpoint = "tv" if media_type == "tv" else "movie"
     year_param = "first_air_date_year" if media_type == "tv" else "year"
-    path = f"/search/{endpoint}?query={query}&include_adult=false&language=en-US"
+    title_key = "name" if media_type == "tv" else "title"
+    original_key = "original_name" if media_type == "tv" else "original_title"
+    base_path = (
+        f"/search/{endpoint}?query={query}&include_adult=false&language=en-US"
+    )
+    path = base_path
     if year:
         path += f"&{year_param}={year}"
+
     results = _get(path).get("results", [])
     if not results and year:
-        results = _get(
-            f"/search/{endpoint}?query={query}&include_adult=false&language=en-US"
-        ).get("results", [])
-    return results[0] if results else None
+        results = _get(base_path).get("results", [])
+    if not results:
+        return None
+
+    wanted = _normalize_title(title)
+    exact_title = [
+        result for result in results
+        if wanted in {
+            _normalize_title(str(result.get(title_key) or "")),
+            _normalize_title(str(result.get(original_key) or "")),
+        }
+    ]
+    if year:
+        exact_title_and_year = [
+            result for result in exact_title
+            if _result_year(result, media_type) == year
+        ]
+        if exact_title_and_year:
+            return max(
+                exact_title_and_year,
+                key=lambda result: int(result.get("vote_count") or 0),
+            )
+    if exact_title:
+        return max(
+            exact_title,
+            key=lambda result: int(result.get("vote_count") or 0),
+        )
+
+    # Do not silently cache a similarly named title. Ambiguous entries should
+    # be reported as unmatched so they can be given an explicit alias/ID.
+    return None
 
 
 def refresh_movie(movie_id: int, title: str, year: int | None) -> bool:
