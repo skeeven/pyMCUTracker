@@ -45,7 +45,7 @@ def get_all_movies() -> list[tuple]:
             SELECT
                 id, title, release_year, release_date, phase, release_order,
                 category, universe, is_core_mcu, is_doomsday_relevant,
-                is_active, notes
+                is_active, notes, media_type, tmdb_id, end_year
             FROM movies
             ORDER BY release_order, id
             """
