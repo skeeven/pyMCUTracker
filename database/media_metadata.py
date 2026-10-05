@@ -13,7 +13,8 @@ def get_metadata_map() -> dict[int, tuple]:
                    poster_path, backdrop_path, runtime_minutes, genres,
                    content_rating, tmdb_rating, tmdb_vote_count, director,
                    cast_names, trailer_key, trailer_name, homepage,
-                   last_refreshed_at
+                   last_refreshed_at, season_count, episode_count, status,
+                   first_air_date, last_air_date
             FROM media_metadata
             """
         )
@@ -32,9 +33,9 @@ def upsert_metadata(movie_id: int, values: dict) -> None:
                 movie_id, media_type, tmdb_id, imdb_id, overview, tagline,
                 poster_path, backdrop_path, runtime_minutes, genres,
                 content_rating, tmdb_rating, tmdb_vote_count, director,
-                cast_names, trailer_key, trailer_name, homepage,
-                last_refreshed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                cast_names, trailer_key, trailer_name, homepage, season_count, episode_count, status,
+                first_air_date, last_air_date, last_refreshed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                       CURRENT_TIMESTAMP)
             """,
             (
@@ -46,6 +47,9 @@ def upsert_metadata(movie_id: int, values: dict) -> None:
                 values.get("tmdb_vote_count"), values.get("director"),
                 values.get("cast_names"), values.get("trailer_key"),
                 values.get("trailer_name"), values.get("homepage"),
+                values.get("season_count"), values.get("episode_count"),
+                values.get("status"), values.get("first_air_date"),
+                values.get("last_air_date"),
             ),
         )
         connection.commit()
