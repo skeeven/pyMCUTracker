@@ -1,103 +1,136 @@
-"""Browse and filter the Road to Doomsday movie catalog."""
-
-from html import escape
+"""Rich Marvel movie library backed by cached TMDB metadata."""
 
 import streamlit as st
 
+from database.media_metadata import get_metadata_map
 from database.movies import get_all_movies
+from services.tmdb import refresh_library
+
+IMAGE_ROOT = "https://image.tmdb.org/t/p/w342"
 
 
 def render_movie_library() -> None:
-    """Render the searchable active movie catalog."""
+    """Render searchable movie cards with cached TMDB details."""
     movies = [movie for movie in get_all_movies() if bool(movie[10])]
 
     st.markdown(
         """
         <section class="hero">
-            <div class="eyebrow">Archive Database</div>
+            <div class="eyebrow">Marvel Archive</div>
             <h1>Movie Library</h1>
-            <p>
-                Browse the complete Road to Doomsday catalog, including MCU
-                and supplemental multiverse titles.
-            </p>
+            <p>Browse the Marvel catalog with cast, ratings, story details, and trailers.</p>
         </section>
         """,
         unsafe_allow_html=True,
     )
 
+    if bool(st.session_state.get("is_admin", False)):
+        refresh_col, note_col = st.columns([1, 3])
+        with refresh_col:
+            if st.button("🔄 Refresh Library", use_container_width=True):
+                with st.spinner("Refreshing movie information from TMDB..."):
+                    refreshed, missed = refresh_library()
+                st.success(f"Refreshed {refreshed} titles.")
+                if missed:
+                    st.warning(
+                        "Could not confidently refresh: " + ", ".join(missed)
+                    )
+                st.rerun()
+        with note_col:
+            st.caption(
+                "Administrator only · Updates cached ratings, cast, artwork, "
+                "synopses, and trailers."
+            )
+
+    try:
+        metadata = get_metadata_map()
+    except Exception:
+        metadata = {}
+        st.info(
+            "Rich metadata is not initialized yet. Run the one-time media "
+            "metadata migration, then use Refresh Library."
+        )
+
     categories = sorted({str(movie[6]) for movie in movies})
-    search_column, category_column = st.columns([3, 1])
+    search_col, category_col = st.columns([3, 1])
+    search_text = search_col.text_input(
+        "Search", placeholder="Movie, actor, director, universe..."
+    ).strip().lower()
+    category_filter = category_col.selectbox("Category", ["All"] + categories)
 
-    with search_column:
-        search_text = st.text_input(
-            "Search movies",
-            placeholder="Search by title...",
-            key="movie_library_search",
-        ).strip().lower()
-
-    with category_column:
-        category_filter = st.selectbox(
-            "Category",
-            options=["All"] + categories,
-            key="movie_library_category",
-        )
-
-    filtered_movies = []
+    filtered = []
     for movie in movies:
-        title = str(movie[1])
-        category = str(movie[6])
-        if search_text and search_text not in title.lower():
+        movie_id = int(movie[0])
+        meta = metadata.get(movie_id)
+        searchable = " ".join(
+            [
+                str(movie[1]), str(movie[6]), str(movie[7]), str(movie[11] or ""),
+                str(meta[13] if meta else ""), str(meta[14] if meta else ""),
+            ]
+        ).lower()
+        if search_text and search_text not in searchable:
             continue
-        if category_filter != "All" and category != category_filter:
+        if category_filter != "All" and str(movie[6]) != category_filter:
             continue
-        filtered_movies.append(movie)
+        filtered.append(movie)
 
-    st.caption(f"Showing {len(filtered_movies)} of {len(movies)} movies")
-    if not filtered_movies:
-        st.info("No movies match the current filters.")
-        return
+    st.caption(f"Showing {len(filtered)} of {len(movies)} movies")
 
-    for movie in filtered_movies:
-        (
-            _movie_id,
-            title,
-            release_year,
-            _release_date,
-            phase,
-            watch_order,
-            category,
-            universe,
-            is_core_mcu,
-            is_doomsday_relevant,
-            _is_active,
-            notes,
-        ) = movie
+    for movie in filtered:
+        movie_id, title, year = int(movie[0]), str(movie[1]), movie[2]
+        category, universe, notes = str(movie[6]), str(movie[7]), movie[11]
+        meta = metadata.get(movie_id)
 
-        year_text = str(release_year) if release_year else "TBA"
-        section_text = "Supplemental" if int(phase) == 0 else f"Phase {phase}"
-        tags = [str(category), str(universe), section_text]
-        if bool(is_core_mcu):
-            tags.append("Core MCU")
-        if bool(is_doomsday_relevant):
-            tags.append("Doomsday Relevant")
+        with st.expander(f"🎬 {title} ({year or 'TBA'})"):
+            if not meta:
+                st.caption(f"{category} · {universe}")
+                if notes:
+                    st.write(notes)
+                st.info("No enriched information cached yet.")
+                continue
 
-        title_html = escape(str(title))
-        meta_html = escape(f"{year_text} · {' · '.join(tags)}")
-        notes_html = (
-            f'<div class="library-meta">{escape(str(notes))}</div>'
-            if notes
-            else ""
-        )
+            (
+                _, media_type, tmdb_id, imdb_id, overview, tagline, poster_path,
+                backdrop_path, runtime, genres, content_rating, rating,
+                vote_count, director, cast_names, trailer_key, trailer_name,
+                homepage, refreshed_at,
+            ) = meta
 
-        card_html = (
-            '<div class="library-card">'
-            f'<div class="library-order">#{int(watch_order):02d}</div>'
-            '<div class="library-details">'
-            f'<div class="library-title">{title_html}</div>'
-            f'<div class="library-meta">{meta_html}</div>'
-            f'{notes_html}'
-            '</div>'
-            '</div>'
-        )
+            poster_col, detail_col = st.columns([1, 3])
+            with poster_col:
+                if poster_path:
+                    st.image(IMAGE_ROOT + str(poster_path), use_container_width=True)
+                if rating:
+                    st.metric("TMDB Rating", f"{float(rating):.1f}/10")
+                    if vote_count:
+                        st.caption(f"{int(vote_count):,} votes")
+            with detail_col:
+                if tagline:
+                    st.markdown(f"*{tagline}*")
+                facts = [category, universe]
+                if runtime:
+                    facts.append(f"{runtime} min")
+                if content_rating:
+                    facts.append(str(content_rating))
+                if genres:
+                    facts.append(str(genres))
+                st.caption(" · ".join(facts))
+                if overview:
+                    st.write(overview)
+                if director:
+                    st.write(f"**Director:** {director}")
+                if cast_names:
+                    st.write(f"**Cast:** {cast_names}")
 
-        st.markdown(card_html, unsafe_allow_html=True)
+            if trailer_key:
+                st.markdown(f"**Trailer:** {trailer_name or 'Official Trailer'}")
+                st.video(f"https://www.youtube.com/watch?v={trailer_key}")
+
+            st.caption(
+                f"Metadata: TMDB #{tmdb_id} · Last refreshed {refreshed_at}"
+            )
+
+    st.caption(
+        "Movie information and imagery provided using TMDB. "
+        "This product uses the TMDB API but is not endorsed or certified by TMDB."
+    )
