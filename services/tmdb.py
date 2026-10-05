@@ -64,15 +64,17 @@ def _get(path: str) -> dict:
         raise TMDBError("TMDB connection timed out.") from exc
 
 
-def _best_result(title: str, year: int | None) -> dict | None:
+def _best_result(title: str, year: int | None, media_type: str = "movie") -> dict | None:
     query = quote(title)
-    path = f"/search/movie?query={query}&include_adult=false&language=en-US"
+    endpoint = "tv" if media_type == "tv" else "movie"
+    year_param = "first_air_date_year" if media_type == "tv" else "year"
+    path = f"/search/{endpoint}?query={query}&include_adult=false&language=en-US"
     if year:
-        path += f"&year={year}"
+        path += f"&{year_param}={year}"
     results = _get(path).get("results", [])
     if not results and year:
         results = _get(
-            f"/search/movie?query={query}&include_adult=false&language=en-US"
+            f"/search/{endpoint}?query={query}&include_adult=false&language=en-US"
         ).get("results", [])
     return results[0] if results else None
 
@@ -154,6 +156,66 @@ def refresh_movie(movie_id: int, title: str, year: int | None) -> bool:
     return True
 
 
+def refresh_tv_series(movie_id: int, title: str, year: int | None) -> bool:
+    match = _best_result(title, year, "tv")
+    if not match:
+        return False
+    tmdb_id = int(match["id"])
+    detail = _get(
+        f"/tv/{tmdb_id}?language=en-US&append_to_response="
+        "aggregate_credits,videos,content_ratings,external_ids"
+    )
+    creators = ", ".join(
+        person.get("name", "") for person in detail.get("created_by", [])
+    )
+    cast = detail.get("aggregate_credits", {}).get("cast", [])[:8]
+    cast_names = ", ".join(str(person.get("name")) for person in cast)
+    trailer = next(
+        (
+            video for video in detail.get("videos", {}).get("results", [])
+            if video.get("site") == "YouTube"
+            and video.get("type") == "Trailer"
+            and video.get("official")
+        ),
+        None,
+    )
+    rating = next(
+        (
+            item.get("rating")
+            for item in detail.get("content_ratings", {}).get("results", [])
+            if item.get("iso_3166_1") == "US"
+        ),
+        None,
+    )
+    runtimes = detail.get("episode_run_time", [])
+    values = {
+        "media_type": "tv",
+        "tmdb_id": tmdb_id,
+        "imdb_id": detail.get("external_ids", {}).get("imdb_id"),
+        "overview": detail.get("overview"),
+        "tagline": detail.get("tagline"),
+        "poster_path": detail.get("poster_path"),
+        "backdrop_path": detail.get("backdrop_path"),
+        "runtime_minutes": runtimes[0] if runtimes else None,
+        "genres": ", ".join(g.get("name", "") for g in detail.get("genres", [])),
+        "content_rating": rating,
+        "tmdb_rating": detail.get("vote_average"),
+        "tmdb_vote_count": detail.get("vote_count"),
+        "director": creators or None,
+        "cast_names": cast_names,
+        "trailer_key": trailer.get("key") if trailer else None,
+        "trailer_name": trailer.get("name") if trailer else None,
+        "homepage": detail.get("homepage"),
+        "season_count": detail.get("number_of_seasons"),
+        "episode_count": detail.get("number_of_episodes"),
+        "status": detail.get("status"),
+        "first_air_date": detail.get("first_air_date"),
+        "last_air_date": detail.get("last_air_date"),
+    }
+    upsert_metadata(movie_id, values)
+    return True
+
+
 def refresh_library(progress_callback=None) -> dict:
     """Refresh active titles and retain useful diagnostics for the UI."""
     active = [movie for movie in get_all_movies() if bool(movie[10])]
@@ -164,10 +226,12 @@ def refresh_library(progress_callback=None) -> dict:
 
     for index, movie in enumerate(active, start=1):
         movie_id, title, year = int(movie[0]), str(movie[1]), movie[2]
+        media_type = str(movie[12]) if len(movie) > 12 else "movie"
         if progress_callback:
             progress_callback(index, total, title, "retrieving")
         try:
-            matched = refresh_movie(
+            refresh_fn = refresh_tv_series if media_type == "tv" else refresh_movie
+            matched = refresh_fn(
                 movie_id, title, int(year) if year else None
             )
             if matched:
