@@ -334,3 +334,36 @@ def set_movie_active(admin_user_id: int, movie_id: int, is_active: bool) -> None
         connection.commit()
     finally:
         connection.close()
+
+
+def delete_movie(admin_user_id: int, movie_id: int) -> str:
+    """Permanently delete a catalog title and all related tracking data."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        _require_admin(cursor, admin_user_id)
+        cursor.execute("SELECT title FROM movies WHERE id = ?", (movie_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("Title was not found.")
+        title = str(row[0])
+
+        # Delete explicitly rather than depending on foreign-key cascade settings
+        # in every SQLiteCloud environment.
+        cursor.execute("DELETE FROM user_movies WHERE movie_id = ?", (movie_id,))
+        cursor.execute(
+            "DELETE FROM watch_path_movies WHERE movie_id = ?",
+            (movie_id,),
+        )
+        cursor.execute(
+            "DELETE FROM media_metadata WHERE movie_id = ?",
+            (movie_id,),
+        )
+        cursor.execute("DELETE FROM movies WHERE id = ?", (movie_id,))
+        connection.commit()
+        return title
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
