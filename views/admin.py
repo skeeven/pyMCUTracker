@@ -6,6 +6,7 @@ from auth.service import reset_user_password_as_admin
 from database.movies import (
     PRIORITY_OPTIONS,
     add_movie,
+    delete_movie,
     get_all_movies_with_priority,
     set_movie_active,
     update_movie,
@@ -392,6 +393,32 @@ def _render_movie_management(current_user_id: int) -> None:
                 except (PermissionError, ValueError) as exc:
                     st.error(str(exc))
 
+            st.divider()
+            st.markdown("**Danger zone**")
+            st.caption(
+                "Permanent deletion removes this title, family viewing history, "
+                "watch-path memberships, and cached TMDB metadata."
+            )
+            confirm_delete = st.checkbox(
+                f"I understand that deleting {title} cannot be undone.",
+                key=f"confirm_delete_movie_{movie_id}",
+            )
+            if st.button(
+                "🗑️ Permanently Delete Title",
+                key=f"delete_movie_{movie_id}",
+                disabled=not confirm_delete,
+                type="primary",
+            ):
+                try:
+                    deleted_title = delete_movie(current_user_id, movie_id)
+                    st.success(f"Permanently deleted {deleted_title}.")
+                    st.rerun()
+                except (PermissionError, ValueError) as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.error("The title could not be deleted.")
+                    st.caption(str(exc))
+
 
 def render_admin_page(current_user_id: int) -> None:
     """Render administrator-only controls."""
@@ -410,7 +437,7 @@ def render_admin_page(current_user_id: int) -> None:
         unsafe_allow_html=True,
     )
 
-    family_tab, movies_tab = st.tabs(["👥 Family", "🎬 Movies"])
+    family_tab, movies_tab = st.tabs(["👥 Family", "🎬 Catalog"])
     with family_tab:
         _render_family_management(current_user_id)
     with movies_tab:
