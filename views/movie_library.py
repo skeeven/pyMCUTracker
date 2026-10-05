@@ -17,8 +17,8 @@ def render_movie_library() -> None:
         """
         <section class="hero">
             <div class="eyebrow">Marvel Archive</div>
-            <h1>Movie Library</h1>
-            <p>Browse the Marvel catalog with cast, ratings, story details, and trailers.</p>
+            <h1>Marvel Library</h1>
+            <p>Browse Marvel movies and TV series with cast, ratings, story details, and trailers.</p>
         </section>
         """,
         unsafe_allow_html=True,
@@ -116,10 +116,11 @@ def render_movie_library() -> None:
         )
 
     categories = sorted({str(movie[6]) for movie in movies})
-    search_col, category_col = st.columns([3, 1])
+    search_col, type_col, category_col = st.columns([3, 1, 1])
     search_text = search_col.text_input(
         "Search", placeholder="Movie, actor, director, universe..."
     ).strip().lower()
+    type_filter = type_col.selectbox("Type", ["All", "Movies", "TV Series"])
     category_filter = category_col.selectbox("Category", ["All"] + categories)
 
     filtered = []
@@ -134,18 +135,25 @@ def render_movie_library() -> None:
         ).lower()
         if search_text and search_text not in searchable:
             continue
+        media_type = str(movie[12]) if len(movie) > 12 else "movie"
+        if type_filter == "Movies" and media_type != "movie":
+            continue
+        if type_filter == "TV Series" and media_type != "tv":
+            continue
         if category_filter != "All" and str(movie[6]) != category_filter:
             continue
         filtered.append(movie)
 
-    st.caption(f"Showing {len(filtered)} of {len(movies)} movies")
+    st.caption(f"Showing {len(filtered)} of {len(movies)} titles")
 
     for movie in filtered:
         movie_id, title, year = int(movie[0]), str(movie[1]), movie[2]
         category, universe, notes = str(movie[6]), str(movie[7]), movie[11]
         meta = metadata.get(movie_id)
+        media_type = str(movie[12]) if len(movie) > 12 else "movie"
+        icon = "📺" if media_type == "tv" else "🎬"
 
-        with st.expander(f"🎬 {title} ({year or 'TBA'})"):
+        with st.expander(f"{icon} {title} ({year or 'TBA'})"):
             if not meta:
                 st.caption(f"{category} · {universe}")
                 if notes:
@@ -157,7 +165,8 @@ def render_movie_library() -> None:
                 _, media_type, tmdb_id, imdb_id, overview, tagline, poster_path,
                 backdrop_path, runtime, genres, content_rating, rating,
                 vote_count, director, cast_names, trailer_key, trailer_name,
-                homepage, refreshed_at,
+                homepage, refreshed_at, season_count, episode_count, series_status,
+                first_air_date, last_air_date,
             ) = meta
 
             poster_col, detail_col = st.columns([1, 3])
@@ -182,7 +191,23 @@ def render_movie_library() -> None:
                 if overview:
                     st.write(overview)
                 if director:
-                    st.write(f"**Director:** {director}")
+                    role = "Created by" if media_type == "tv" else "Director"
+                    st.write(f"**{role}:** {director}")
+                if media_type == "tv":
+                    series_bits = []
+                    if season_count:
+                        series_bits.append(f"{season_count} season(s)")
+                    if episode_count:
+                        series_bits.append(f"{episode_count} episodes")
+                    if series_status:
+                        series_bits.append(str(series_status))
+                    if series_bits:
+                        st.write("**Series:** " + " · ".join(series_bits))
+                    if first_air_date:
+                        air_range = str(first_air_date)
+                        if last_air_date and last_air_date != first_air_date:
+                            air_range += f" → {last_air_date}"
+                        st.caption(f"Aired: {air_range}")
                 if cast_names:
                     st.write(f"**Cast:** {cast_names}")
 
