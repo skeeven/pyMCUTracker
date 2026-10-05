@@ -163,6 +163,8 @@ def refresh_movie(movie_id: int, title: str, year: int | None) -> bool:
 
 def refresh_tv_series(movie_id: int, title: str, year: int | None) -> bool:
     search_title = TV_SEARCH_ALIASES.get(title, title)
+    if search_title.endswith(" (TV Series)"):
+        search_title = search_title[:-12]
     match = _best_result(search_title, year, "tv")
     if not match:
         return False
