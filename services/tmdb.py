@@ -3,12 +3,30 @@
 import json
 import os
 from urllib.parse import quote
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from database.media_metadata import upsert_metadata
 from database.movies import get_all_movies
 
 API_ROOT = "https://api.themoviedb.org/3"
+
+
+class TMDBError(RuntimeError):
+    """Friendly TMDB connectivity/authentication error."""
+
+
+def test_connection() -> str:
+    """Validate credentials before starting a full library refresh."""
+    try:
+        data = _get("/configuration")
+        if not data.get("images"):
+            raise TMDBError("TMDB connected, but returned an unexpected response.")
+        return "Connected to TMDB."
+    except TMDBError:
+        raise
+    except Exception as exc:
+        raise TMDBError(f"Unable to connect to TMDB: {exc}") from exc
 
 
 def _token() -> str:
@@ -26,8 +44,24 @@ def _get(path: str) -> dict:
             "accept": "application/json",
         },
     )
-    with urlopen(request, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code == 401:
+            raise TMDBError(
+                "TMDB rejected the access token (401 Unauthorized). "
+                "Check TMDB_ACCESS_TOKEN in this environment."
+            ) from exc
+        if exc.code == 403:
+            raise TMDBError(
+                "TMDB denied access (403 Forbidden). Check the token permissions."
+            ) from exc
+        raise TMDBError(f"TMDB returned HTTP {exc.code}.") from exc
+    except URLError as exc:
+        raise TMDBError(f"Network error contacting TMDB: {exc.reason}") from exc
+    except TimeoutError as exc:
+        raise TMDBError("TMDB connection timed out.") from exc
 
 
 def _best_result(title: str, year: int | None) -> dict | None:
@@ -120,18 +154,40 @@ def refresh_movie(movie_id: int, title: str, year: int | None) -> bool:
     return True
 
 
-def refresh_library() -> tuple[int, list[str]]:
+def refresh_library(progress_callback=None) -> dict:
+    """Refresh active titles and retain useful diagnostics for the UI."""
+    active = [movie for movie in get_all_movies() if bool(movie[10])]
+    total = len(active)
     refreshed = 0
-    missed = []
-    for movie in get_all_movies():
+    unmatched = []
+    failed = []
+
+    for index, movie in enumerate(active, start=1):
         movie_id, title, year = int(movie[0]), str(movie[1]), movie[2]
-        if not bool(movie[10]):
-            continue
+        if progress_callback:
+            progress_callback(index, total, title, "retrieving")
         try:
-            if refresh_movie(movie_id, title, int(year) if year else None):
+            matched = refresh_movie(
+                movie_id, title, int(year) if year else None
+            )
+            if matched:
                 refreshed += 1
+                if progress_callback:
+                    progress_callback(index, total, title, "saved")
             else:
-                missed.append(title)
-        except Exception:
-            missed.append(title)
-    return refreshed, missed
+                unmatched.append(title)
+                if progress_callback:
+                    progress_callback(index, total, title, "unmatched")
+        except TMDBError:
+            raise
+        except Exception as exc:
+            failed.append((title, str(exc)))
+            if progress_callback:
+                progress_callback(index, total, title, "failed")
+
+    return {
+        "total": total,
+        "refreshed": refreshed,
+        "unmatched": unmatched,
+        "failed": failed,
+    }
