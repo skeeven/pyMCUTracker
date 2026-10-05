@@ -12,7 +12,7 @@ from auth.ui import (
     render_auth_page,
 )
 from database.connection import DatabaseConnectionError
-from database.movies import get_active_movies
+from database.watch_paths import PRIORITY_HELP, get_path_movies, get_watch_paths
 from database.schema import DatabaseSchemaError, validate_schema
 from database.user_movies import get_family_movie_statuses
 from database.users import get_active_users
@@ -106,33 +106,48 @@ def render_dashboard() -> None:
     st.markdown(
         """
         <section class="hero">
-            <div class="eyebrow">Family Watch Initiative</div>
-            <h1>Road to Doomsday</h1>
+            <div class="eyebrow">Family Marvel Movie Tracker</div>
+            <h1>Marvel Movie Tracker</h1>
             <p>
-                Track MCU and supplemental Marvel movies, compare family
-                progress, and get everyone ready for Avengers: Doomsday.
+                Explore Marvel watch paths, compare family progress, and keep
+                the Road to Doomsday mission moving.
             </p>
         </section>
         """,
         unsafe_allow_html=True,
     )
 
-    watch_mode = st.segmented_control(
-        "Watch path",
+    paths = list(get_watch_paths())
+    if not paths:
+        st.error("No watch paths are configured.")
+        return
+
+    path_names = [str(path[2]) for path in paths]
+    default_index = next(
+        (i for i, path in enumerate(paths) if str(path[1]) == "road-to-doomsday"),
+        0,
+    )
+    selected_name = st.selectbox(
+        "Watch path", path_names, index=default_index, key="dashboard_path"
+    )
+    selected = next(path for path in paths if str(path[2]) == selected_name)
+    _, path_slug, _, description = selected
+    if description:
+        st.caption(str(description))
+
+    level = st.segmented_control(
+        "Viewing level",
         options=["Essential", "Recommended", "Completionist"],
         default="Recommended",
-        key="dashboard_watch_mode",
-        help=(
-            "Essential shows only must-watch titles. Recommended adds useful "
-            "context. Completionist includes every active movie."
-        ),
+        key="dashboard_level",
     )
-    movies = list(get_active_movies(watch_mode or "Recommended"))
+    with st.expander("What do Essential, Recommended, and Optional mean?"):
+        st.markdown(PRIORITY_HELP)
+        st.caption("Completionist includes Essential, Recommended, and Optional titles.")
 
+    movies = list(get_path_movies(str(path_slug), level or "Recommended"))
     watched_count = get_member_watched_count(
-        int(st.session_state.user_id),
-        statuses,
-        movies,
+        int(st.session_state.user_id), statuses, movies
     )
     total_movies = len(movies)
     progress = watched_count / total_movies if total_movies else 0.0
@@ -141,112 +156,63 @@ def render_dashboard() -> None:
     next_movie = get_next_family_movie(users, statuses, movies)
     tonight_pick = get_tonight_recommendation(users, statuses, movies=movies)
 
-    st.caption(f"Current path: **{watch_mode or 'Recommended'}** · {total_movies} movies")
-
     col1, col2, col3, col4 = st.columns(4)
-    metrics = (
-        (col1, "Countdown", f"{days_until_doomsday()} days"),
+    countdown_label = "Doomsday Countdown" if str(path_slug) == "road-to-doomsday" else "Movies"
+    countdown_value = (
+        f"{days_until_doomsday()} days"
+        if str(path_slug) == "road-to-doomsday"
+        else str(total_movies)
+    )
+    for column, label, value in (
+        (col1, countdown_label, countdown_value),
         (col2, "Your Progress", f"{watched_count} / {total_movies}"),
         (col3, "Family Complete", f"{family_complete} / {total_movies}"),
         (col4, "Family Members", str(len(users))),
-    )
-    for column, label, value in metrics:
+    ):
         with column:
-            st.markdown(
-                f"""
-                <div class="metric-card">
-                    <div class="metric-label">{label}</div>
-                    <div class="metric-value">{value}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            st.metric(label, value)
 
     progress_col, family_col = st.columns(2)
     with progress_col:
-        st.subheader("Your mission progress")
+        st.subheader("Your progress")
         st.progress(progress)
-        st.caption(f"{progress:.0%} of this watch path complete")
+        st.caption(f"{progress:.0%} complete")
     with family_col:
-        st.subheader("Family mission progress")
+        st.subheader("Family progress")
         st.progress(family_progress)
-        st.caption(f"{family_progress:.0%} of this path watched by everyone")
+        st.caption(f"{family_progress:.0%} watched by everyone")
 
     render_phase_progress(users, statuses, movies)
 
-    if users:
-        st.subheader("Family members")
-        member_columns = st.columns(min(len(users), 4))
-        for index, user in enumerate(users):
-            user_id, name, _, _ = user
-            member_count = get_member_watched_count(int(user_id), statuses, movies)
-            member_progress = member_count / total_movies if total_movies else 0.0
-            with member_columns[index % len(member_columns)]:
-                st.write(f"**{name}**")
-                st.progress(member_progress)
-                st.caption(f"{member_count}/{total_movies} · {member_progress:.0%}")
-
     recommendation_col, tonight_col = st.columns(2)
-
     with recommendation_col:
         st.subheader("Next Family Movie")
         if next_movie:
             movie_id, title, release_year, phase = next_movie
-            year_text = str(release_year) if release_year else "TBA"
-            section = "Supplemental" if int(phase) == 0 else f"Phase {phase}"
-            missing_names = get_missing_member_names(int(movie_id), users, statuses)
-            missing_text = ", ".join(missing_names) if missing_names else "Nobody"
-            st.markdown(
-                f"""
-                <div class="recommendation-card">
-                    <div class="recommendation-label">Watch Order Mission</div>
-                    <div class="recommendation-title">🎬 {title}</div>
-                    <div class="recommendation-meta">{section} · {year_text}</div>
-                    <div class="recommendation-detail">
-                        <strong>Still needs it:</strong> {missing_text}<br>
-                        Earliest title in the selected watch path not yet complete.
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            missing = get_missing_member_names(int(movie_id), users, statuses)
+            st.write(f"**🎬 {title}** ({release_year or 'TBA'})")
+            st.caption("Still needs it: " + (", ".join(missing) or "Nobody"))
         elif total_movies:
             st.success("Everyone has completed this watch path!")
 
     with tonight_col:
         st.subheader("What Should We Watch Tonight?")
         if tonight_pick:
-            movie, missing_names = tonight_pick
-            _, title, release_year, phase = movie
-            section = "Supplemental" if int(phase) == 0 else f"Phase {phase}"
-            missing_text = ", ".join(missing_names)
-            st.markdown(
-                f"""
-                <div class="recommendation-card">
-                    <div class="recommendation-label">Biggest Shared Win</div>
-                    <div class="recommendation-title">🍿 {title}</div>
-                    <div class="recommendation-meta">{section} · {release_year}</div>
-                    <div class="recommendation-detail">
-                        <strong>Helps {len(missing_names)}:</strong> {missing_text}<br>
-                        Chosen to make the biggest shared progress in this path.
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            movie, missing = tonight_pick
+            st.write(f"**🍿 {movie[1]}** ({movie[2] or 'TBA'})")
+            st.caption(f"Helps {len(missing)} family member(s): {', '.join(missing)}")
         else:
             st.success("No released movie in this path is still needed.")
 
     st.subheader(f"Welcome, {st.session_state.user_name}")
     st.write(
         "Use **My Movies** to update your progress, **Family Tracker** to compare "
-        "everyone, and **Movie Library** to browse the full catalog."
+        "everyone, and **Movie Library** to browse the full Marvel catalog."
     )
-
 
 def render_sidebar() -> str:
     with st.sidebar:
-        st.title("Road to Doomsday")
+        st.title("Marvel Movie Tracker")
         st.caption("Family Marvel Watch Tracker")
         st.divider()
 
@@ -298,7 +264,7 @@ def render_database_error(error: Exception) -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Road to Doomsday",
+        page_title="Marvel Movie Tracker",
         page_icon="🎬",
         layout="wide",
         initial_sidebar_state="expanded",
