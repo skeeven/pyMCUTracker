@@ -1,14 +1,11 @@
-"""Personal movie checklist page."""
+"""Personal Marvel movie checklist page."""
 
 import streamlit as st
 
-from database.movies import get_active_movies
-from database.user_movies import (
-    get_user_movie_statuses,
-    set_movie_watched,
-)
+from database.user_movies import get_user_movie_statuses, set_movie_watched
+from database.watch_paths import PRIORITY_HELP, get_path_movies, get_watch_paths
 
-WATCH_PATHS = ["Essential", "Recommended", "Completionist"]
+LEVELS = ["Essential", "Recommended", "Completionist"]
 
 
 def _phase_label(phase: int) -> str:
@@ -20,28 +17,37 @@ def render_my_movies(user_id: int) -> None:
     st.markdown(
         """
         <section class="hero">
-            <div class="eyebrow">Personal Mission Log</div>
+            <div class="eyebrow">Personal Marvel Log</div>
             <h1>My Movies</h1>
-            <p>
-                Check off each Road to Doomsday movie as you watch it. Your
-                progress saves automatically to your account.
-            </p>
+            <p>Choose a Marvel watch path and track your progress.</p>
         </section>
         """,
         unsafe_allow_html=True,
     )
 
-    watch_mode = st.segmented_control(
-        "Watch path",
-        options=WATCH_PATHS,
+    paths = list(get_watch_paths())
+    if not paths:
+        st.error("No watch paths are configured.")
+        return
+
+    path_names = [str(path[2]) for path in paths]
+    selected_name = st.selectbox("Watch path", path_names, key="my_movies_path")
+    selected = next(path for path in paths if str(path[2]) == selected_name)
+    _, path_slug, _, description = selected
+    if description:
+        st.caption(str(description))
+
+    level = st.segmented_control(
+        "Viewing level",
+        options=LEVELS,
         default="Recommended",
-        key="my_movies_watch_mode",
-        help=(
-            "Essential shows only must-watch titles. Recommended adds useful "
-            "context. Completionist includes every active movie."
-        ),
+        key="my_movies_level",
     )
-    movies = list(get_active_movies(watch_mode or "Recommended"))
+    with st.expander("What do Essential, Recommended, and Optional mean?"):
+        st.markdown(PRIORITY_HELP)
+        st.caption("Completionist includes Essential, Recommended, and Optional titles.")
+
+    movies = list(get_path_movies(str(path_slug), level or "Recommended"))
     statuses = get_user_movie_statuses(user_id)
     watched_count = sum(
         1 for movie_id, *_ in movies if statuses.get(int(movie_id), False)
@@ -49,8 +55,9 @@ def render_my_movies(user_id: int) -> None:
     total_movies = len(movies)
     progress = watched_count / total_movies if total_movies else 0.0
 
-    st.caption(f"Current path: **{watch_mode or 'Recommended'}** · {total_movies} movies")
-
+    st.caption(
+        f"**{selected_name}** · **{level or 'Recommended'}** · {total_movies} movies"
+    )
     col1, col2, col3 = st.columns(3)
     col1.metric("Watched", watched_count)
     col2.metric("Remaining", total_movies - watched_count)
@@ -58,40 +65,24 @@ def render_my_movies(user_id: int) -> None:
     st.progress(progress)
 
     phases = sorted({int(movie[3]) for movie in movies})
-    phase_options = ["All"] + [
-        "Supplemental" if phase == 0 else str(phase) for phase in phases
-    ]
-    phase_filter = st.segmented_control(
-        "Section",
-        options=phase_options,
-        default="All",
-        key="my_movies_phase_filter",
-    )
-
     for phase in phases:
-        filter_value = "Supplemental" if phase == 0 else str(phase)
-        if phase_filter != "All" and phase_filter != filter_value:
-            continue
-
         phase_movies = [movie for movie in movies if int(movie[3]) == phase]
         phase_watched = sum(
             1 for movie in phase_movies if statuses.get(int(movie[0]), False)
         )
-
         st.subheader(
-            f"{_phase_label(phase)}  ·  {phase_watched}/{len(phase_movies)} watched"
+            f"{_phase_label(phase)} · {phase_watched}/{len(phase_movies)} watched"
         )
-
         for movie_id, title, release_year, _ in phase_movies:
             movie_id = int(movie_id)
             checked = statuses.get(movie_id, False)
             year_text = str(release_year) if release_year else "TBA"
-            label = f"{title} — {year_text}"
-            key = f"movie_{user_id}_{movie_id}"
-
-            new_value = st.checkbox(label, value=checked, key=key)
+            new_value = st.checkbox(
+                f"{title} — {year_text}",
+                value=checked,
+                key=f"movie_{user_id}_{movie_id}_{path_slug}",
+            )
             if new_value != checked:
                 set_movie_watched(user_id, user_id, movie_id, new_value)
                 st.rerun()
-
         st.divider()
