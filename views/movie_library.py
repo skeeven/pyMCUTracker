@@ -7,7 +7,6 @@ from database.movies import get_all_movies
 from services.tmdb import TMDBError, refresh_library, test_connection
 
 IMAGE_ROOT = "https://image.tmdb.org/t/p/w342"
-PAGE_SIZE = 12
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -86,6 +85,24 @@ def _render_title_detail(movie, meta) -> None:
         st.markdown(f"**Trailer:** {trailer_name or 'Official Trailer'}")
         st.video(f"https://www.youtube.com/watch?v={trailer_key}")
     st.caption(f"Metadata: TMDB #{tmdb_id} · Last refreshed {refreshed_at}")
+
+
+def _release_date(movie, meta) -> str:
+    """Return the best display/sort date available for a catalog title."""
+    media_type = str(movie[12]) if len(movie) > 12 else "movie"
+    if media_type == "tv" and meta and meta[22]:
+        return str(meta[22])
+    if movie[3]:
+        return str(movie[3])
+    if movie[2]:
+        return f"{int(movie[2]):04d}"
+    return "TBA"
+
+
+def _rating_text(meta) -> str:
+    if meta and meta[11] is not None:
+        return f"{float(meta[11]):.1f}/10"
+    return "—"
 
 
 def render_movie_library() -> None:
@@ -196,9 +213,7 @@ def render_movie_library() -> None:
 
     categories = sorted({str(movie[6]) for movie in movies})
     search_col, type_col, category_col = st.columns([3, 1, 1])
-    search_text = search_col.text_input(
-        "Search", placeholder="Movie, actor, director, universe..."
-    ).strip().lower()
+    search_text = search_col.text_input(\n        "Search", placeholder="Title, actor, creator, universe..."\n    ).strip().lower()
     type_filter = type_col.selectbox("Type", ["All", "Movies", "TV Series"])
     category_filter = category_col.selectbox("Category", ["All"] + categories)
 
@@ -223,51 +238,61 @@ def render_movie_library() -> None:
             continue
         filtered.append(movie)
 
-    total_filtered = len(filtered)
-    total_pages = max((total_filtered + PAGE_SIZE - 1) // PAGE_SIZE, 1)
-    if st.session_state.get("library_page", 1) > total_pages:
-        st.session_state.library_page = 1
+    selected_id = st.session_state.get("library_selected_id")
+    selected_movie = next(
+        (movie for movie in movies if int(movie[0]) == int(selected_id)),
+        None,
+    ) if selected_id is not None else None
 
-    page = st.number_input(
-        "Page",
-        min_value=1,
-        max_value=total_pages,
-        value=int(st.session_state.get("library_page", 1)),
-        step=1,
-        key="library_page",
-    )
-    start_index = (int(page) - 1) * PAGE_SIZE
-    page_movies = filtered[start_index:start_index + PAGE_SIZE]
-    st.caption(
-        f"Showing {start_index + 1 if total_filtered else 0}–"
-        f"{min(start_index + PAGE_SIZE, total_filtered)} of "
-        f"{total_filtered} matching titles · {len(movies)} total"
-    )
-
-    if not page_movies:
-        st.info("No titles match these filters.")
+    if selected_movie is not None:
+        if st.button("← Back to Library", key="library_back"):
+            st.session_state.library_selected_id = None
+            st.rerun()
+        st.divider()
+        _render_title_detail(
+            selected_movie,
+            metadata.get(int(selected_movie[0])),
+        )
     else:
-        labels = {}
-        for movie in page_movies:
+        st.session_state.library_selected_id = None
+        filtered.sort(
+            key=lambda movie: (
+                _release_date(movie, metadata.get(int(movie[0]))) == "TBA",
+                _release_date(movie, metadata.get(int(movie[0]))),
+                str(movie[1]).casefold(),
+            )
+        )
+        st.caption(
+            f"Showing {len(filtered)} matching titles · {len(movies)} total · "
+            "sorted by release date"
+        )
+
+        header_title, header_date, header_rating = st.columns([5, 2, 1])
+        header_title.markdown("**Title**")
+        header_date.markdown("**Release date**")
+        header_rating.markdown("**Rating**")
+        st.divider()
+
+        if not filtered:
+            st.info("No titles match these filters.")
+        for movie in filtered:
+            movie_id = int(movie[0])
             media_type = str(movie[12]) if len(movie) > 12 else "movie"
             icon = "📺" if media_type == "tv" else "🎬"
-            labels[int(movie[0])] = (
-                f"{icon} {movie[1]} ({movie[2] or 'TBA'})"
-            )
-
-        selected_id = st.selectbox(
-            "Select a title",
-            options=list(labels),
-            format_func=lambda movie_id: labels[movie_id],
-            key=f"library_title_page_{int(page)}",
-        )
-        selected_movie = next(
-            movie for movie in page_movies if int(movie[0]) == int(selected_id)
-        )
-        st.divider()
-        _render_title_detail(selected_movie, metadata.get(int(selected_id)))
+            meta = metadata.get(movie_id)
+            title_col, date_col, rating_col = st.columns([5, 2, 1])
+            with title_col:
+                if st.button(
+                    f"{icon} {movie[1]}",
+                    key=f"library_open_{movie_id}",
+                    use_container_width=True,
+                ):
+                    st.session_state.library_selected_id = movie_id
+                    st.rerun()
+            date_col.write(_release_date(movie, meta))
+            rating_col.write(_rating_text(meta))
 
     st.caption(
-        "Movie information and imagery provided using TMDB. "
+        "Movie and TV information and imagery provided using TMDB. "
         "This product uses the TMDB API but is not endorsed or certified by TMDB."
     )
