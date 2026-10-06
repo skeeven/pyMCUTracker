@@ -213,7 +213,10 @@ def render_movie_library() -> None:
 
     categories = sorted({str(movie[6]) for movie in movies})
     search_col, type_col, category_col = st.columns([3, 1, 1])
-    search_text = search_col.text_input(\n        "Search", placeholder="Title, actor, creator, universe..."\n    ).strip().lower()
+    search_text = search_col.text_input(
+        "Search",
+        placeholder="Title, actor, creator, universe...",
+    ).strip().lower()
     type_filter = type_col.selectbox("Type", ["All", "Movies", "TV Series"])
     category_filter = category_col.selectbox("Category", ["All"] + categories)
 
